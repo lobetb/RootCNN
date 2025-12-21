@@ -36,6 +36,8 @@ class RootTipDataset(Dataset):
         self.stride = stride
         self.transform = transform
         self.samples = []  # (image_idx, x, y)
+        self._last_img_idx = -1
+        self._last_img_arr = None
         
         for img_idx, image_path in enumerate(self.image_paths):
             with Image.open(image_path) as img:
@@ -51,9 +53,14 @@ class RootTipDataset(Dataset):
         img_idx, x, y = self.samples[idx]
         image_path = self.image_paths[img_idx]
         
-        image = np.array(Image.open(image_path))
-        if image.ndim == 2:
-            image = np.stack([image]*3, axis=-1)
+        if img_idx == self._last_img_idx:
+            image = self._last_img_arr
+        else:
+            image = np.array(Image.open(image_path))
+            if image.ndim == 2:
+                image = np.stack([image]*3, axis=-1)
+            self._last_img_idx = img_idx
+            self._last_img_arr = image
         
         annots = self.annotations_dict.get(image_path.name, [])
         tips = [(tx - x, ty - y) for (tx, ty) in annots if x <= tx < x+self.patch_size and y <= ty < y+self.patch_size]

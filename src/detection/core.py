@@ -32,18 +32,26 @@ def get_tip_coords_pred(image, model, patch_size=512, stride=256, threshold=0.5,
         for x in range(0, W - patch_size + 1, stride):
             patch_coords.append((x, y))
             
+    # Process patches in batches
     for i in range(0, len(patch_coords), batch_size):
         batch_info = patch_coords[i:i + batch_size]
-        batch_tensors = []
+        
+        # Batch tensor creation: use a single large tensor if possible
+        patches = []
         for x, y in batch_info:
             patch = image[y:y+patch_size, x:x+patch_size]
-            batch_tensors.append(torch.from_numpy(patch).float().permute(2, 0, 1) / 255.0)
+            patches.append(patch)
+        
+        # Stack all patches at once and convert to tensor
+        batch_array = np.stack(patches).transpose(0, 3, 1, 2)
+        batch_tensor = torch.from_numpy(batch_array).float().to(device) / 255.0
             
-        batch_tensor = torch.stack(batch_tensors).to(device)
         with torch.no_grad():
             preds = torch.sigmoid(model(batch_tensor)).cpu().numpy()
             
         for idx, (x, y) in enumerate(batch_info):
+            # Using bitwise OR for binary heatmaps might be faster if they were binary, 
+            # but here they are floats from sigmoid, so maximum is correct for overlapping patches.
             pred_heatmap[y:y+patch_size, x:x+patch_size] = np.maximum(
                 pred_heatmap[y:y+patch_size, x:x+patch_size], preds[idx, 0])
 
@@ -55,11 +63,19 @@ def extract_features_from_patches(patches, extractor, device, batch_size=16):
     if not patches:
         return np.array([])
     
+    # Process in batches
     features = []
     for i in range(0, len(patches), batch_size):
-        batch = torch.stack(patches[i:i + batch_size]).to(device)
+        batch = patches[i:i + batch_size]
+        if isinstance(batch[0], torch.Tensor):
+            batch_tensor = torch.stack(batch).to(device)
+        else:
+            # Assume it's a list of numpy arrays
+            batch_array = np.stack(batch).transpose(0, 3, 1, 2)
+            batch_tensor = torch.from_numpy(batch_array).float().to(device) / 255.0
+            
         with torch.no_grad():
-            feat_maps = extractor(batch)
+            feat_maps = extractor(batch_tensor)
             fh, fw = feat_maps.shape[2:]
             cy, cx = fh // 2, fw // 2
             vecs = feat_maps[:, :, cy, cx].cpu().numpy()
@@ -131,7 +147,7 @@ def export_features_for_folder(
                     pad_w = patch_size - patch.shape[1]
                     patch = np.pad(patch, ((0,pad_h),(0,pad_w),(0,0)), mode='constant')
                 
-                current_patches.append(torch.from_numpy(patch).float().permute(2, 0, 1) / 255.0)
+                current_patches.append(patch) # Keep as numpy for now, stack in extract_features_from_patches
 
         if extract_features and extractor:
             features = extract_features_from_patches(current_patches, extractor, device)

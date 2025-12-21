@@ -14,27 +14,47 @@ def compute_cost_matrix_from_features(tips1, tips2, model, device, spatial_thres
     num2 = len(tips2)
     cost_matrix = np.full((num1, num2), 1e6)
 
-    for i in range(num1):
-        for j in range(num2):
-            c1 = np.array([tips1[i]['x'], tips1[i]['y']])
-            c2 = np.array([tips2[j]['x'], tips2[j]['y']])
-            dist = np.linalg.norm(c1 - c2)
-            
-            if dist > spatial_threshold:
-                continue
+    if num1 == 0 or num2 == 0:
+        return cost_matrix
 
-            f1 = torch.tensor(tips1[i]['features']).float()
-            f2 = torch.tensor(tips2[j]['features']).float()
-            dx = c2[0] - c1[0]
-            dy = c2[1] - c1[1]
-            spatial_feat = torch.tensor([dx/100.0, dy/100.0, dist/100.0]).float()
-            
-            inp = torch.cat([f1, f2, spatial_feat]).unsqueeze(0).to(device)
-            with torch.no_grad():
-                prob = model(inp).item()
-            
-            cost_matrix[i, j] = 1.0 - prob
+    # 1. Prepare features and coordinates as tensors
+    # Moving all data to the device at once is much faster than per-tip conversions
+    feats1 = torch.tensor([t['features'] for t in tips1], device=device).float() # (N1, 256)
+    coords1 = torch.tensor([[t['x'], t['y']] for t in tips1], device=device).float() # (N1, 2)
+    
+    feats2 = torch.tensor([t['features'] for t in tips2], device=device).float() # (N2, 256)
+    coords2 = torch.tensor([[t['x'], t['y']] for t in tips2], device=device).float() # (N2, 2)
 
+    # 2. Compute pairwise distances using torch.cdist (very fast on GPU)
+    # Output shape: (N1, N2)
+    dist_matrix = torch.cdist(coords1, coords2, p=2) 
+    
+    # 3. Filter pairs by spatial threshold
+    mask = dist_matrix <= spatial_threshold
+    idx1, idx2 = torch.where(mask)
+    
+    if idx1.numel() == 0:
+        return cost_matrix
+
+    # 4. Prepare batch inputs efficiently
+    # We use indexing to create the batch of pairs without any Python loops
+    f1_batch = feats1[idx1] # (K, 256)
+    f2_batch = feats2[idx2] # (K, 256)
+    
+    dxy = coords2[idx2] - coords1[idx1] # (K, 2)
+    dist_batch = dist_matrix[idx1, idx2].unsqueeze(1) # (K, 1)
+    
+    # Concatenate [feat1, feat2, dx/100, dy/100, dist/100]
+    spatial_feats = torch.cat([dxy / 100.0, dist_batch / 100.0], dim=1) # (K, 3)
+    batch_input = torch.cat([f1_batch, f2_batch, spatial_feats], dim=1) # (K, 515)
+    
+    # 5. Run model inference on the whole batch
+    with torch.no_grad():
+        probs = model(batch_input).squeeze(1).cpu().numpy() # (K,)
+        
+    # 6. Efficiently fill the cost matrix
+    cost_matrix[idx1.cpu().numpy(), idx2.cpu().numpy()] = 1.0 - probs
+    
     return cost_matrix
 
 def associate_tips_multi_plant(features_json, model_path, output_json, output_links_json=None, spatial_threshold=150, prob_threshold=0.2):
