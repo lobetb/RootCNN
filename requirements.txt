@@ -6,3 +6,7 @@ scikit-image
 tqdm
 Pillow
 matplotlib
+plotly
+dash
+pandas
+

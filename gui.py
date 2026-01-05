@@ -11,6 +11,8 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from src.detection.core import train_detection, export_features_for_folder
 from src.association.core import train_linker, associate_tips_multi_plant
+from src.detection.noise import train_noise_classifier # Import from src
+
 
 class ThreadSafeConsole:
     def __init__(self, text_widget, root):
@@ -53,6 +55,8 @@ class RootCNN_V2_GUI:
         self.notebook.pack(fill='both', expand=True, padx=10, pady=10)
 
         # Tabs
+        # Tabs
+        self.create_noise_train_tab() # New tab
         self.create_detection_train_tab()
         self.create_detect_tips_tab()
         self.create_linker_train_tab()
@@ -94,6 +98,46 @@ class RootCNN_V2_GUI:
         
         threading.Thread(target=task, daemon=True).start()
 
+    # --- TAB: Noise Training ---
+    def create_noise_train_tab(self):
+        frame = ttk.Frame(self.notebook)
+        self.notebook.add(frame, text="0. Train Noise Filter")
+        
+        row = 0
+        ttk.Label(frame, text="Dataset Folder (contains 'clean'/'noisy'):").grid(row=row, column=0, sticky='w', padx=5, pady=5)
+        self.noise_train_data_entry = ttk.Entry(frame, width=50)
+        self.noise_train_data_entry.grid(row=row, column=1, padx=5, pady=5)
+        ttk.Button(frame, text="Browse", command=lambda: self.browse_dir(self.noise_train_data_entry)).grid(row=row, column=2, padx=5, pady=5)
+
+        row += 1
+        ttk.Label(frame, text="Epochs:").grid(row=row, column=0, sticky='w', padx=5, pady=5)
+        self.noise_epochs_entry = ttk.Entry(frame, width=10)
+        self.noise_epochs_entry.insert(0, "15")
+        self.noise_epochs_entry.grid(row=row, column=1, sticky='w', padx=5, pady=5)
+
+        row += 1
+        ttk.Label(frame, text="Output Model Name:").grid(row=row, column=0, sticky='w', padx=5, pady=5)
+        self.noise_model_name_entry = ttk.Entry(frame, width=30)
+        self.noise_model_name_entry.insert(0, "models/noise_classifier.pth")
+        self.noise_model_name_entry.grid(row=row, column=1, sticky='w', padx=5, pady=5)
+
+        row += 1
+        ttk.Button(frame, text="Start Noise Model Training", command=self.run_noise_train).grid(row=row, column=0, columnspan=3, pady=20)
+
+    def run_noise_train(self):
+        data_dir = self.noise_train_data_entry.get()
+        epochs = int(self.noise_epochs_entry.get())
+        output_model = self.noise_model_name_entry.get()
+
+        if not data_dir:
+            messagebox.showwarning("Input Required", "Please provide dataset folder.")
+            return
+            
+        # Create output directory for model if needed
+        os.makedirs(os.path.dirname(output_model), exist_ok=True)
+
+        self.run_wrapper(train_noise_classifier, data_dir, output_model, epochs=epochs)
+
     # --- TAB: Detection Training ---
     def create_detection_train_tab(self):
         frame = ttk.Frame(self.notebook)
@@ -130,6 +174,13 @@ class RootCNN_V2_GUI:
         self.det_model_name_entry.grid(row=row, column=1, sticky='w', padx=5, pady=5)
 
         row += 1
+        ttk.Label(frame, text="Log File (optional):").grid(row=row, column=0, sticky='w', padx=5, pady=5)
+        self.det_train_log_entry = ttk.Entry(frame, width=50)
+        self.det_train_log_entry.insert(0, "output/logs/detection_training.json")
+        self.det_train_log_entry.grid(row=row, column=1, padx=5, pady=5)
+        ttk.Button(frame, text="Browse", command=lambda: self.browse_file(self.det_train_log_entry, save=True)).grid(row=row, column=2, padx=5, pady=5)
+
+        row += 1
         ttk.Button(frame, text="Start Detector Training", command=self.run_det_train).grid(row=row, column=0, columnspan=3, pady=20)
 
     def run_det_train(self):
@@ -138,12 +189,13 @@ class RootCNN_V2_GUI:
         epochs = int(self.det_epochs_entry.get())
         bs = int(self.det_batch_entry.get())
         mname = self.det_model_name_entry.get().strip()
+        log_file = self.det_train_log_entry.get().strip() or None
 
         if not img_dir or not ann_file:
             messagebox.showwarning("Input Required", "Please provide image folder and annotations.")
             return
 
-        self.run_wrapper(train_detection, img_dir, ann_file, epochs=epochs, batch_size=bs, model_name=mname)
+        self.run_wrapper(train_detection, img_dir, ann_file, epochs=epochs, batch_size=bs, model_name=mname, log_file=log_file)
 
     # --- TAB: Detect Tips ---
     def create_detect_tips_tab(self):
@@ -191,6 +243,23 @@ class RootCNN_V2_GUI:
         self.exp_thresh_entry.grid(row=row, column=1, sticky='w', padx=5, pady=5)
 
         row += 1
+        self.exp_log_entry = ttk.Entry(frame, width=50)
+        self.exp_log_entry.insert(0, "output/logs/detection.json")
+        self.exp_log_entry.grid(row=row, column=1, padx=5, pady=5)
+        ttk.Button(frame, text="Browse", command=lambda: self.browse_file(self.exp_log_entry, save=True)).grid(row=row, column=2, padx=5, pady=5)
+        
+        row += 1
+        self.exp_filter_noise_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(frame, text="Filter Noisy Images?", variable=self.exp_filter_noise_var).grid(row=row, column=0, sticky='w', padx=5, pady=5)
+        
+        row += 1
+        ttk.Label(frame, text="Noise Model Path:").grid(row=row, column=0, sticky='w', padx=5, pady=5)
+        self.exp_noise_model_entry = ttk.Entry(frame, width=50)
+        self.exp_noise_model_entry.insert(0, "models/noise_classifier.pth")
+        self.exp_noise_model_entry.grid(row=row, column=1, padx=5, pady=5)
+        ttk.Button(frame, text="Browse", command=lambda: self.browse_file(self.exp_noise_model_entry)).grid(row=row, column=2, padx=5, pady=5)
+
+        row += 1
         ttk.Button(frame, text="Run Detection & Feature Extraction", command=self.run_feature_export).grid(row=row, column=0, columnspan=3, pady=20)
 
     def run_feature_export(self):
@@ -201,12 +270,16 @@ class RootCNN_V2_GUI:
         extract_feat = self.exp_extract_feat_var.get()
         thresh = float(self.exp_thresh_entry.get())
         ann = self.exp_ann_entry.get()
+        log_file = self.exp_log_entry.get().strip() or None
+        
+        filter_noise = self.exp_filter_noise_var.get()
+        noise_model_path = self.exp_noise_model_entry.get()
 
         if not img_folder or not model_ckpt:
             messagebox.showwarning("Input Required", "Please provide image folder and model.")
             return
 
-        self.run_wrapper(export_features_for_folder, img_folder, model_ckpt, out_json, annotations_json=ann, use_gt=use_gt, extract_features=extract_feat, threshold=thresh)
+        self.run_wrapper(export_features_for_folder, img_folder, model_ckpt, out_json, annotations_json=ann, use_gt=use_gt, extract_features=extract_feat, threshold=thresh, log_file=log_file, filter_noise=filter_noise, noise_model_path=noise_model_path)
 
     # --- TAB: Linker Training ---
     def create_linker_train_tab(self):
@@ -239,6 +312,13 @@ class RootCNN_V2_GUI:
         self.link_model_entry.grid(row=row, column=1, sticky='w', padx=5, pady=5)
 
         row += 1
+        ttk.Label(frame, text="Log File (optional):").grid(row=row, column=0, sticky='w', padx=5, pady=5)
+        self.link_train_log_entry = ttk.Entry(frame, width=50)
+        self.link_train_log_entry.insert(0, "output/logs/linker_training.json")
+        self.link_train_log_entry.grid(row=row, column=1, padx=5, pady=5)
+        ttk.Button(frame, text="Browse", command=lambda: self.browse_file(self.link_train_log_entry, save=True)).grid(row=row, column=2, padx=5, pady=5)
+
+        row += 1
         ttk.Button(frame, text="Start Linker Training", command=self.run_link_train).grid(row=row, column=0, columnspan=3, pady=20)
 
     def run_link_train(self):
@@ -246,12 +326,13 @@ class RootCNN_V2_GUI:
         ann_json = self.link_ann_entry.get()
         epochs = int(self.link_epochs_entry.get())
         mname = self.link_model_entry.get().strip()
+        log_file = self.link_train_log_entry.get().strip() or None
 
         if not feat_json or not ann_json:
             messagebox.showwarning("Input Required", "Please provide features and link annotations.")
             return
 
-        self.run_wrapper(train_linker, feat_json, ann_json, epochs=epochs, model_name=mname)
+        self.run_wrapper(train_linker, feat_json, ann_json, epochs=epochs, model_name=mname, log_file=log_file)
 
     # --- TAB: Association ---
     def create_association_tab(self):
@@ -299,6 +380,13 @@ class RootCNN_V2_GUI:
         self.assoc_prob_entry.grid(row=row, column=1, sticky='w', padx=5, pady=5)
 
         row += 1
+        ttk.Label(frame, text="Log File (optional):").grid(row=row, column=0, sticky='w', padx=5, pady=5)
+        self.assoc_log_entry = ttk.Entry(frame, width=50)
+        self.assoc_log_entry.insert(0, "output/logs/tracking.json")
+        self.assoc_log_entry.grid(row=row, column=1, padx=5, pady=5)
+        ttk.Button(frame, text="Browse", command=lambda: self.browse_file(self.assoc_log_entry, save=True)).grid(row=row, column=2, padx=5, pady=5)
+
+        row += 1
         ttk.Button(frame, text="Run Tip Tracking", command=self.run_association).grid(row=row, column=0, columnspan=3, pady=20)
 
     def run_association(self):
@@ -308,12 +396,13 @@ class RootCNN_V2_GUI:
         out_links_json = self.assoc_links_json_entry.get()
         spatial = int(self.assoc_spatial_entry.get())
         prob = float(self.assoc_prob_entry.get())
+        log_file = self.assoc_log_entry.get().strip() or None
 
         if not feat_json or not model_path:
             messagebox.showwarning("Input Required", "Please provide features and linker model.")
             return
 
-        self.run_wrapper(associate_tips_multi_plant, feat_json, model_path, out_json, output_links_json=out_links_json, spatial_threshold=spatial, prob_threshold=prob)
+        self.run_wrapper(associate_tips_multi_plant, feat_json, model_path, out_json, output_links_json=out_links_json, spatial_threshold=spatial, prob_threshold=prob, log_file=log_file)
 
 if __name__ == "__main__":
     root = tk.Tk()

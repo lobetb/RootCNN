@@ -1,0 +1,99 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>RootCNN v2 Performance Dashboard</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        h1 {
+            color: #2c3e50;
+            text-align: center;
+        }
+        h2 {
+            color: #34495e;
+            border-bottom: 2px solid #3498db;
+            padding-bottom: 10px;
+        }
+        .plot-container {
+            background: white;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 10px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        .plot-link {
+            display: block;
+            padding: 15px;
+            margin: 10px 0;
+            background: #3498db;
+            color: white;
+            text-decoration: none;
+            border-radius: 5px;
+            text-align: center;
+            transition: background 0.3s;
+        }
+        .plot-link:hover {
+            background: #2980b9;
+        }
+        .stats {
+            background: #ecf0f1;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>🌱 RootCNN v2 Performance Dashboard</h1>
+    
+    <div class="stats">
+        <h3>Dataset Summary</h3>
+        <p><strong>Detection:</strong> 20 images processed</p>
+        <p><strong>Tracking:</strong> 20 images tracked</p>
+        <p><strong>Training:</strong> 10 epochs completed</p>
+        <p><strong>Generated:</strong> 2026-01-05 08:22:39</p>
+    </div>
+    
+    <h2>📊 Detection Metrics</h2>
+    <div class="plot-container">
+        <a href="detection_tips_over_time.html" class="plot-link">
+            📈 Tips Detected Over Time
+        </a>
+        <a href="detection_performance.html" class="plot-link">
+            ⚡ Processing Performance Analysis
+        </a>
+    </div>
+    
+    <h2>🔗 Tracking Metrics</h2>
+    <div class="plot-container">
+        <a href="tracking_multi_plant.html" class="plot-link">
+            🌿 Multi-Plant Tracking
+        </a>
+        <a href="tracking_association_rate.html" class="plot-link">
+            ✅ Association Success Rate
+        </a>
+    </div>
+    
+    <h2>📈 Training Metrics</h2>
+    <div class="plot-container">
+        <a href="training_loss.html" class="plot-link">
+            📉 Training Loss Curves
+        </a>
+        <a href="training_accuracy.html" class="plot-link">
+            🎯 Training Accuracy Curves
+        </a>
+    </div>
+    
+    <hr style="margin: 40px 0;">
+    
+    <p style="text-align: center; color: #7f8c8d;">
+        <strong>RootCNN v2</strong> | Interactive plots powered by Plotly
+    </p>
+</body>
+</html>

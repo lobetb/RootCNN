@@ -2,12 +2,14 @@ import torch
 import json
 import numpy as np
 import os
+import time
 from tqdm import tqdm
 from scipy.optimize import linear_sum_assignment
 from torch.utils.data import DataLoader
 
 from src.association.models import AffinityMLP, LinkingDataset
 from src.utils.common import get_device, get_timestamp, get_plant_id, filter_outlier_images
+from src.utils.logging import PerformanceLogger
 
 def compute_cost_matrix_from_features(tips1, tips2, model, device, spatial_threshold=150):
     num1 = len(tips1)
@@ -57,7 +59,7 @@ def compute_cost_matrix_from_features(tips1, tips2, model, device, spatial_thres
     
     return cost_matrix
 
-def associate_tips_multi_plant(features_json, model_path, output_json, output_links_json=None, spatial_threshold=150, prob_threshold=0.2):
+def associate_tips_multi_plant(features_json, model_path, output_json, output_links_json=None, spatial_threshold=150, prob_threshold=0.2, log_file=None):
     device = get_device()
     
     with open(features_json, 'r') as f:
@@ -82,6 +84,9 @@ def associate_tips_multi_plant(features_json, model_path, output_json, output_li
     all_tracks = []
     all_positive_links = []
     global_next_id = 0
+    
+    # Initialize logger if log_file is provided
+    logger = PerformanceLogger(log_file, log_type="tracking") if log_file else None
 
     for pid, images_dict in plant_data.items():
         print(f"Processing Plant ID: {pid}")
@@ -90,6 +95,7 @@ def associate_tips_multi_plant(features_json, model_path, output_json, output_li
         
         prev_tips = []
         for img_name in tqdm(sorted_imgs, desc=f"Tracking {pid}"):
+            img_start_time = time.time()
             if img_name not in valid_imgs:
                 continue
             curr_tips_raw = images_dict[img_name]
@@ -153,6 +159,21 @@ def associate_tips_multi_plant(features_json, model_path, output_json, output_li
                 "plant_id": pid,
                 "tips": [{"id": t["id"], "x": t["x"], "y": t["y"], "score": t["score"], "assoc_score": t.get("assoc_score", 0.0)} for t in curr_tips]
             })
+            
+            # Log tracking metrics
+            if logger:
+                img_timestamp = get_timestamp(img_name)
+                processing_time = time.time() - img_start_time
+                num_associations = len([t for t in curr_tips if t.get("assoc_score", 0.0) > 0])
+                logger.log_image_processing(
+                    image_name=img_name,
+                    num_tips=len(curr_tips),
+                    processing_time=processing_time,
+                    image_timestamp=img_timestamp,
+                    num_associations=num_associations,
+                    additional_metrics={"plant_id": pid}
+                )
+            
             prev_tips = curr_tips
 
     with open(output_json, 'w') as f:
@@ -163,8 +184,12 @@ def associate_tips_multi_plant(features_json, model_path, output_json, output_li
         with open(output_links_json, 'w') as f:
             json.dump(all_positive_links, f, indent=2)
         print(f"Saved {len(all_positive_links)} positive associations to {output_links_json}")
+    
+    # Save performance log
+    if logger:
+        logger.save()
 
-def train_linker(features_json, links_json, epochs=20, batch_size=32, model_name="tip_linker.pth"):
+def train_linker(features_json, links_json, epochs=20, batch_size=32, model_name="tip_linker.pth", log_file=None):
     device = get_device()
     
     with open(features_json, 'r') as f:
@@ -190,7 +215,11 @@ def train_linker(features_json, links_json, epochs=20, batch_size=32, model_name
     
     os.makedirs("models", exist_ok=True)
     
+    # Initialize logger if log_file is provided
+    logger = PerformanceLogger(log_file, log_type="training_linker") if log_file else None
+    
     for epoch in range(epochs):
+        epoch_start_time = time.time()
         model.train()
         total_loss = 0
         for x, y in loader:
@@ -202,7 +231,23 @@ def train_linker(features_json, links_json, epochs=20, batch_size=32, model_name
             optimizer.step()
             total_loss += loss.item()
         
-        print(f"Epoch {epoch+1} Linker Loss: {total_loss/len(loader):.6f}")
+        avg_loss = total_loss / len(loader)
+        epoch_time = time.time() - epoch_start_time
+        
+        print(f"Epoch {epoch+1} Linker Loss: {avg_loss:.6f} Time: {epoch_time:.2f}s")
+        
+        # Log metrics
+        if logger:
+            logger.log_training_epoch(
+                epoch=epoch+1,
+                train_loss=avg_loss,
+                val_loss=avg_loss,  # No validation split, so use train loss
+                epoch_time=epoch_time
+            )
         
     torch.save(model.state_dict(), os.path.join("models", model_name))
     print(f"Linker model saved to models/{model_name}")
+    
+    # Save performance log
+    if logger:
+        logger.save()
