@@ -60,7 +60,7 @@ The GUI is organized into four sequential tabs:
 
 ## Performance & Benchmarking
 
-RootCNN v2 is optimized for high throughput using PyTorch vectorization. Most of the heavy computation (including tiling, inference, and association) happens directly on the GPU.
+RootCNN is optimized for high throughput using PyTorch vectorization. Most of the heavy computation (including tiling, inference, and association) happens directly on the GPU.
 
 To run the performance benchmark:
 ```bash
