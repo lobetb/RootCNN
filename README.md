@@ -1,6 +1,6 @@
-# RootCNN v2
+# RootCNN
 
-RootCNN v2 is a consolidated deep learning pipeline for detecting and tracking root tips in time-series images. It provides a unified graphical interface to handle the entire workflow from training to association.
+RootCNN is a consolidated deep learning pipeline for detecting and tracking root tips in time-series images. It provides a unified graphical interface to handle the entire workflow from training to association.
 
 ## Key Features
 
@@ -35,16 +35,17 @@ Main dependencies include:
 
 Launch the main interface by running:
 ```bash
-python RootCNN_v2/gui.py
+python RootCNN/gui.py
 ```
 
 ### The Workflow
 
 The GUI is organized into four sequential tabs:
 
+0. **Train Noisy Images Detector**: Train to recognize noisy images (where droplets from the water supply can induce false positives).
 1. **Train Detector**: Train the UNet model to identify root tips based on annotated ground truth.
 2. **Detect Tips**: Use a trained detector to predict tips and optionally extract deep features from your image series. Features are necessary for the subsequent tracking step.
-3. **Train Linker**: Train the Affinity MLP to learn the association between tips in consecutive frames using deep features and spatial relative coordinates.
+3. **Train Linker**: Train the GNN (graphe neural network) to learn the association between tips in consecutive frames using deep features and spatial relative coordinates.
 4. **Track Tips**: Perform the final association and tracking across the series. This step automatically handles multiple plant sequences and filters out images containing artifacts.
 
 ## Project Structure
@@ -55,22 +56,16 @@ The GUI is organized into four sequential tabs:
   - `association/`: Affinity MLP models and tip tracking logic.
   - `utils/`: Shared utilities (path handling, device management, outlier filtering).
 - `models/`: Default directory for trained model checkpoints (`.pth`).
-- `output/`: Default directory for exported features and tracking results (`.json`).
-- `tests/`: Benchmarking and verification scripts.
+- `output/`: Default directory for exported features and tracking results (`.json`). Created when running the program.
+- `tools/`: Three tools.
+  - `generate_heatmap.py`: Generate images to visualize tips detection.
+  - `link_annotator.py`: Manually annotate the links between tips in image pairs (requires tips annotation first).
+  - `tips_annotator.py`: Manually annotate tips in images.
 
 ## Performance & Benchmarking
 
-RootCNN v2 is optimized for high throughput using PyTorch vectorization. Most of the heavy computation (including tiling, inference, and association) happens directly on the GPU.
+RootCNN is optimized for high throughput using PyTorch vectorization. Most of the heavy computation (including tiling, inference, and association) happens directly on the GPU. Mixed precision (FP16) is used for performance.
 
-To run the performance benchmark:
-```bash
-./env/bin/python3 tests/benchmark_optimization.py
-```
-
-Typical performance on a modern GPU:
-- **Detection**: ~1.1s for a 2048x2048 image.
-- **Tracking**: ~0.08s for 100x100 tip associations (10,000 pairs).
-
-## License
-
-[Add License Information Here]
+Current performance on a RTX 4080 GPU:
+- **Detection**: ~7s per 14k*4k from the aeroponics platform
+- **Tracking**: Very fast, not measured yet.
