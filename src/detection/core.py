@@ -50,7 +50,7 @@ def get_tip_coords_pred(image, model, patch_size=512, stride=256, threshold=0.5,
         batch_array = np.stack(patches).transpose(0, 3, 1, 2)
         batch_tensor = torch.from_numpy(batch_array).float().to(device) / 255.0
             
-        # Use Mixed Precision (FP16) for faster inference
+        # Use Mixed Precision (FP16) for faster inference with no noticeable loss in accuracy
         device_type = 'cuda' if 'cuda' in str(device) else 'cpu'
         with torch.amp.autocast(device_type):
             with torch.no_grad():

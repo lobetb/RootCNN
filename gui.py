@@ -243,13 +243,14 @@ class RootCNN_V2_GUI:
         self.exp_thresh_entry.grid(row=row, column=1, sticky='w', padx=5, pady=5)
 
         row += 1
+        ttk.Label(frame, text="Detection log file:").grid(row=row, column=0, sticky='w', padx=5, pady=5)
         self.exp_log_entry = ttk.Entry(frame, width=50)
         self.exp_log_entry.insert(0, "output/logs/detection.json")
         self.exp_log_entry.grid(row=row, column=1, padx=5, pady=5)
         ttk.Button(frame, text="Browse", command=lambda: self.browse_file(self.exp_log_entry, save=True)).grid(row=row, column=2, padx=5, pady=5)
         
         row += 1
-        self.exp_filter_noise_var = tk.BooleanVar(value=False)
+        self.exp_filter_noise_var = tk.BooleanVar(value=True)
         ttk.Checkbutton(frame, text="Filter Noisy Images?", variable=self.exp_filter_noise_var).grid(row=row, column=0, sticky='w', padx=5, pady=5)
         
         row += 1
@@ -308,8 +309,12 @@ class RootCNN_V2_GUI:
         row += 1
         ttk.Label(frame, text="Output Model Name:").grid(row=row, column=0, sticky='w', padx=5, pady=5)
         self.link_model_entry = ttk.Entry(frame, width=30)
-        self.link_model_entry.insert(0, "linker.pth")
+        self.link_model_entry.insert(0, "gnn_linker.pth")
         self.link_model_entry.grid(row=row, column=1, sticky='w', padx=5, pady=5)
+
+        row += 1
+        self.link_use_gnn_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(frame, text="Use GNN Architecture (Recommended)", variable=self.link_use_gnn_var).grid(row=row, column=0, columnspan=2, sticky='w', padx=5)
 
         row += 1
         ttk.Label(frame, text="Log File (optional):").grid(row=row, column=0, sticky='w', padx=5, pady=5)
@@ -327,12 +332,13 @@ class RootCNN_V2_GUI:
         epochs = int(self.link_epochs_entry.get())
         mname = self.link_model_entry.get().strip()
         log_file = self.link_train_log_entry.get().strip() or None
+        use_gnn = self.link_use_gnn_var.get()
 
         if not feat_json or not ann_json:
             messagebox.showwarning("Input Required", "Please provide features and link annotations.")
             return
 
-        self.run_wrapper(train_linker, feat_json, ann_json, epochs=epochs, model_name=mname, log_file=log_file)
+        self.run_wrapper(train_linker, feat_json, ann_json, epochs=epochs, model_name=mname, log_file=log_file, use_gnn=use_gnn)
 
     # --- TAB: Association ---
     def create_association_tab(self):
@@ -349,7 +355,7 @@ class RootCNN_V2_GUI:
         row += 1
         ttk.Label(frame, text="Linker Model Checkpoint:").grid(row=row, column=0, sticky='w', padx=5, pady=5)
         self.assoc_model_entry = ttk.Entry(frame, width=50)
-        self.assoc_model_entry.insert(0, "models/linker.pth")
+        self.assoc_model_entry.insert(0, "models/gnn_linker.pth")
         self.assoc_model_entry.grid(row=row, column=1, padx=5, pady=5)
         ttk.Button(frame, text="Browse", command=lambda: self.browse_file(self.assoc_model_entry)).grid(row=row, column=2, padx=5, pady=5)
 

@@ -51,18 +51,25 @@ class LinkingDataset(Dataset):
             tips2 = tip_features[img2_name]
             
             true_links = set((l['tip1_index'], l['tip2_index']) for l in links)
+            annot_t1_indices = sorted(list(set(l[0] for l in true_links)))
+            annot_t2_indices = sorted(list(set(l[1] for l in true_links)))
             
             # Positives
             for t1_idx, t2_idx in true_links:
                 if t1_idx < len(tips1) and t2_idx < len(tips2):
                     self.samples.append((tips1[t1_idx], tips2[t2_idx], 1.0))
             
-            # Negatives
-            for t1_idx in range(len(tips1)):
+            # Negatives: Only use indices that were actually annotated
+            for t1_idx in annot_t1_indices:
+                if t1_idx >= len(tips1): continue
                 true_t2_idx = next((l[1] for l in true_links if l[0] == t1_idx), -1)
-                potential_negs = [j for j in range(len(tips2)) if j != true_t2_idx]
+                
+                # Potential negatives are other annotated tips in the second frame
+                potential_negs = [j for j in annot_t2_indices if j != true_t2_idx and j < len(tips2)]
+                
                 if potential_negs:
-                    num_negs = min(2, len(potential_negs))
+                    # Randomly pick some negatives from the annotated set
+                    num_negs = min(3, len(potential_negs))
                     negs = np.random.choice(potential_negs, num_negs, replace=False)
                     for t2_idx in negs:
                         self.samples.append((tips1[t1_idx], tips2[t2_idx], 0.0))

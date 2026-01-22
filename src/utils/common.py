@@ -9,13 +9,19 @@ def get_device():
 
 def get_plant_id(filename):
     """
-    Extracts plant ID from filename. 
-    Format assumed: plantID-timestamp.extension or plantID_something-timestamp.extension
-    Using part before the first dash as approved in the plan.
+    Extracts plant ID from filename or directory structure. 
+    Format 1: plantID-timestamp.extension
+    Format 2: /path/to/plantID/timestamp.extension
     """
     basename = os.path.basename(filename)
     if '-' in basename:
         return basename.split('-')[0]
+    
+    # Fallback to parent directory name
+    parent = os.path.basename(os.path.dirname(filename))
+    if parent:
+        return parent
+        
     return "unknown"
 
 def get_timestamp(filename):

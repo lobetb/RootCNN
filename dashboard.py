@@ -13,12 +13,12 @@ from pathlib import Path
 from datetime import datetime
 
 # Initialize Dash app
-app = dash.Dash(__name__, title="RootCNN Dashboard")
+app = dash.Dash(__name__, title="RootCNN v2 Dashboard")
 
 # App layout
 app.layout = html.Div([
     html.Div([
-        html.H1("RootCNN Performance Dashboard", 
+        html.H1("RootCNN v2 Performance Dashboard", 
                 style={'textAlign': 'center', 'color': '#2c3e50', 'marginBottom': 30}),
         
         # File selection section

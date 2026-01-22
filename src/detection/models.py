@@ -4,7 +4,7 @@ from torch.utils.data import Dataset
 import numpy as np
 from PIL import Image
 from pathlib import Path
-
+ 
 def make_heatmap(coords, size, sigma=3):
     H, W = size
     heatmap = np.zeros((H, W), dtype=np.float32)
@@ -62,7 +62,11 @@ class RootTipDataset(Dataset):
             self._last_img_idx = img_idx
             self._last_img_arr = image
         
-        annots = self.annotations_dict.get(image_path.name, [])
+        # Annotation lookup: try full path as it appears in annotations_dict
+        # Often annotations_dict keys are basenames, but could be relative paths
+        annots = self.annotations_dict.get(str(image_path), 
+                 self.annotations_dict.get(image_path.name, []))
+        
         tips = [(tx - x, ty - y) for (tx, ty) in annots if x <= tx < x+self.patch_size and y <= ty < y+self.patch_size]
         heatmap = make_heatmap(tips, (self.patch_size, self.patch_size))
         patch = image[y:y+self.patch_size, x:x+self.patch_size]

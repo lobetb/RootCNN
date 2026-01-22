@@ -101,23 +101,26 @@ def main():
     print(f"Found {len(pairs)} unique image pairs.")
     
     for (img1_name, img2_name), current_links in tqdm(pairs.items(), desc="Generating Images"):
+        # standard path resolution
         img1_path = img_folder / img1_name
         img2_path = img_folder / img2_name
         
-        # Check if files exist (try recursive or exact)
+        # Check if files exist
         if not img1_path.exists():
-            # Try recursive find
-            found = list(img_folder.rglob(img1_name))
-            if found: img1_path = found[0]
+            # Try to find by basename as a fallback
+            found = list(img_folder.rglob(Path(img1_name).name))
+            if found: 
+                img1_path = found[0]
             else:
-                # print(f"Warning: {img1_name} not found.")
+                print(f"Warning: {img1_name} not found in {img_folder}")
                 continue
                 
         if not img2_path.exists():
-             found = list(img_folder.rglob(img2_name))
-             if found: img2_path = found[0]
+             found = list(img_folder.rglob(Path(img2_name).name))
+             if found: 
+                 img2_path = found[0]
              else:
-                # print(f"Warning: {img2_name} not found.")
+                print(f"Warning: {img2_name} not found in {img_folder}")
                 continue
         
         compound = create_compound_image(img1_path, img2_path)
@@ -126,10 +129,14 @@ def main():
             
         viz_img = draw_links(compound, current_links)
         
-        # Output filename: img2_name (since it's for 'each image in time serie except first')
-        # We can prepend diagnostic_
+        # Output filename: replace slashes with underscores to flatten output
+        # or keep structure? Let's keep structure but ensure dir exists
         out_name = out_folder / f"viz_{img2_name}"
-        cv2.imwrite(str(out_name), viz_img)
+        out_name.parent.mkdir(parents=True, exist_ok=True)
+        
+        success = cv2.imwrite(str(out_name), viz_img)
+        if not success:
+            print(f"Error: Failed to write {out_name}")
         
     print(f"Done. Diagnostic images saved to {out_folder}")
 

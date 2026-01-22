@@ -9,4 +9,6 @@ matplotlib
 plotly
 dash
 pandas
-
+patsy
+statsmodels
+FastGeodis
