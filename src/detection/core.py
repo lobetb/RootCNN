@@ -23,7 +23,33 @@ def detect_peaks(heatmap, threshold=0.5, min_distance=10):
     coords = peak_local_max(heatmap, min_distance=min_distance, threshold_abs=threshold)
     return coords[:, [1, 0]]  # (x, y)
 
-def get_tip_coords_pred(image, model, patch_size=512, stride=256, threshold=0.5, min_distance=10, batch_size=16):
+def find_support_boundary(image, threshold=40, min_thickness=20):
+    """
+    Detects the Y-coordinate of the bottom edge of the main plant support.
+    Scans from the bottom of the image upwards, looking for a contiguous
+    dark horizontal region that is at least `min_thickness` pixels tall.
+    """
+    image_arr = np.array(image)
+    if image_arr.ndim == 3:
+        gray = cv2.cvtColor(image_arr, cv2.COLOR_RGB2GRAY)
+    else:
+        gray = image_arr
+        
+    row_means = np.mean(gray, axis=1)
+    H = len(row_means)
+    
+    consecutive_dark = 0
+    for y in range(H - 1, 0, -1):
+        if row_means[y] < threshold:
+            consecutive_dark += 1
+        else:
+            if consecutive_dark >= min_thickness:
+                return y + consecutive_dark
+            consecutive_dark = 0
+            
+    return 0
+
+def get_tip_coords_pred(image, model, patch_size=512, stride=256, threshold=0.5, min_distance=10, batch_size=16, y_min=0):
     device = next(model.parameters()).device
     image = np.array(image)
     if image.ndim == 2:
@@ -32,7 +58,7 @@ def get_tip_coords_pred(image, model, patch_size=512, stride=256, threshold=0.5,
     pred_heatmap = np.zeros((H, W), dtype=np.float32)
     
     patch_coords = []
-    for y in range(0, H - patch_size + 1, stride):
+    for y in range(y_min, H - patch_size + 1, stride):
         for x in range(0, W - patch_size + 1, stride):
             patch_coords.append((x, y))
             
@@ -202,7 +228,8 @@ def export_features_for_folder(
             coords = ann.get(img_path.name, [])
             coords = [[x, y] for x, y in coords]
         else:
-            coords = get_tip_coords_pred(image, base_model, threshold=float(threshold))
+            y_boundary = find_support_boundary(image)
+            coords = get_tip_coords_pred(image, base_model, threshold=float(threshold), y_min=y_boundary)
         
         if not coords:
             # Log even if no tips detected
