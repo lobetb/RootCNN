@@ -69,3 +69,5 @@ RootCNN is optimized for high throughput using PyTorch vectorization. Most of th
 Current performance on a RTX 4080 GPU:
 - **Detection**: ~7s per 14k*4k from the aeroponics platform
 - **Tracking**: Very fast, not measured yet.
+
+Preliminary evaluation of the linking accuracy (on a model trained on a limited dataset of 16 image pairs) shows that it identifies around 50% of the ground-truth links and that 70% of the identified links are correct.
