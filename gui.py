@@ -19,7 +19,7 @@ class ThreadSafeConsole:
         self.text_widget = text_widget
         self.root = root
         self.queue = queue.Queue()
-        self.update_interval = 100
+        self.update_interval = 250
         self.root.after(self.update_interval, self.process_queue)
 
     def write(self, string):
@@ -45,10 +45,38 @@ class ThreadSafeConsole:
                 break
         self.root.after(self.update_interval, self.process_queue)
 
+class ToolTip:
+    def __init__(self, widget, text):
+        self.widget = widget
+        self.text = text
+        self.tip_window = None
+        self.widget.bind("<Enter>", self.show_tip)
+        self.widget.bind("<Leave>", self.hide_tip)
+
+    def show_tip(self, event=None):
+        if self.tip_window or not self.text:
+            return
+        x, y, cx, cy = self.widget.bbox("insert")
+        x = x + self.widget.winfo_rootx() + 25
+        y = y + cy + self.widget.winfo_rooty() + 25
+        tw = self.tip_window = tk.Toplevel(self.widget)
+        tw.wm_overrideredirect(True)
+        tw.wm_geometry(f"+{x}+{y}")
+        label = tk.Label(tw, text=self.text, justify=tk.LEFT,
+                      background="#ffffe0", relief=tk.SOLID, borderwidth=1,
+                      font=("tahoma", "8", "normal"))
+        label.pack(ipadx=1)
+
+    def hide_tip(self, event=None):
+        tw = self.tip_window
+        self.tip_window = None
+        if tw:
+            tw.destroy()
+
 class RootCNN_V2_GUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("RootCNN v2 - Consolidated Interface")
+        self.root.title("RootCNN")
         self.root.geometry("900x700")
 
         self.notebook = ttk.Notebook(root)
@@ -88,6 +116,12 @@ class RootCNN_V2_GUI:
             entry.delete(0, tk.END)
             entry.insert(0, path)
 
+    def add_info_icon(self, parent, row, column, text):
+        info_icon = ttk.Label(parent, text="ⓘ", cursor="hand2", foreground="blue")
+        info_icon.grid(row=row, column=column, padx=2, sticky='w')
+        ToolTip(info_icon, text)
+        return info_icon
+
     def run_wrapper(self, func, *args, **kwargs):
         def task():
             try:
@@ -104,16 +138,21 @@ class RootCNN_V2_GUI:
         self.notebook.add(frame, text="0. Train Noise Filter")
         
         row = 0
+        ttk.Label(frame, text="DEPRECATED : not necessary if the detector is trained with noisy images").grid(row=row, column=0, sticky='w', padx=5, pady=5)
+
+        row += 1
         ttk.Label(frame, text="Dataset Folder (contains 'clean'/'noisy'):").grid(row=row, column=0, sticky='w', padx=5, pady=5)
         self.noise_train_data_entry = ttk.Entry(frame, width=50)
         self.noise_train_data_entry.grid(row=row, column=1, padx=5, pady=5)
         ttk.Button(frame, text="Browse", command=lambda: self.browse_dir(self.noise_train_data_entry)).grid(row=row, column=2, padx=5, pady=5)
+        self.add_info_icon(frame, row, 3, "Folder should contain subfolders 'clean' and 'noisy' with respective images.")
 
         row += 1
         ttk.Label(frame, text="Epochs:").grid(row=row, column=0, sticky='w', padx=5, pady=5)
         self.noise_epochs_entry = ttk.Entry(frame, width=10)
         self.noise_epochs_entry.insert(0, "15")
         self.noise_epochs_entry.grid(row=row, column=1, sticky='w', padx=5, pady=5)
+        self.add_info_icon(frame, row, 3, "Number of times to iterate over the entire dataset. 10-20 is usually enough.")
 
         row += 1
         ttk.Label(frame, text="Output Model Name:").grid(row=row, column=0, sticky='w', padx=5, pady=5)
@@ -160,12 +199,14 @@ class RootCNN_V2_GUI:
         self.det_epochs_entry = ttk.Entry(frame, width=10)
         self.det_epochs_entry.insert(0, "20")
         self.det_epochs_entry.grid(row=row, column=1, sticky='w', padx=5, pady=5)
+        self.add_info_icon(frame, row, 3, "Training duration. 20-50 epochs recommended for new data.")
 
         row += 1
         ttk.Label(frame, text="Batch Size:").grid(row=row, column=0, sticky='w', padx=5, pady=5)
         self.det_batch_entry = ttk.Entry(frame, width=10)
         self.det_batch_entry.insert(0, "4")
         self.det_batch_entry.grid(row=row, column=1, sticky='w', padx=5, pady=5)
+        self.add_info_icon(frame, row, 3, "Number of images processed per step. Decrease if out of GPU memory.")
 
         row += 1
         ttk.Label(frame, text="Output Model Name:").grid(row=row, column=0, sticky='w', padx=5, pady=5)
@@ -221,14 +262,17 @@ class RootCNN_V2_GUI:
         self.exp_json_entry.insert(0, "output/deep_tip_features.json")
         self.exp_json_entry.grid(row=row, column=1, padx=5, pady=5)
         ttk.Button(frame, text="Browse", command=lambda: self.browse_file(self.exp_json_entry, save=True)).grid(row=row, column=2, padx=5, pady=5)
+        self.add_info_icon(frame, row, 3, "Primary output containing tip coordinates and deep features.")
 
         row += 1
         self.exp_extract_feat_var = tk.BooleanVar(value=True)
         ttk.Checkbutton(frame, text="Export deep features (necessary for tracking)", variable=self.exp_extract_feat_var).grid(row=row, column=0, columnspan=2, sticky='w', padx=5)
+        self.add_info_icon(frame, row, 3, "If unchecked, only tip coordinates will be saved. Deep features are needed for linking.")
 
         row += 1
         self.exp_use_gt_var = tk.BooleanVar()
         ttk.Checkbutton(frame, text="Use Ground Truth Tips?", variable=self.exp_use_gt_var).grid(row=row, column=0, columnspan=2, sticky='w', padx=5)
+        self.add_info_icon(frame, row, 3, "Use manual annotations instead of detector predictions.")
 
         row += 1
         ttk.Label(frame, text="GT Annotations (if used):").grid(row=row, column=0, sticky='w', padx=5, pady=5)
@@ -241,6 +285,7 @@ class RootCNN_V2_GUI:
         self.exp_thresh_entry = ttk.Entry(frame, width=10)
         self.exp_thresh_entry.insert(0, "0.5")
         self.exp_thresh_entry.grid(row=row, column=1, sticky='w', padx=5, pady=5)
+        self.add_info_icon(frame, row, 3, "Confidence threshold for tip detection (0.0 to 1.0).")
 
         row += 1
         ttk.Label(frame, text="Detection log file:").grid(row=row, column=0, sticky='w', padx=5, pady=5)
@@ -250,9 +295,9 @@ class RootCNN_V2_GUI:
         ttk.Button(frame, text="Browse", command=lambda: self.browse_file(self.exp_log_entry, save=True)).grid(row=row, column=2, padx=5, pady=5)
         
         row += 1
-        self.exp_filter_noise_var = tk.BooleanVar(value=True)
+        self.exp_filter_noise_var = tk.BooleanVar(value=False)
         ttk.Checkbutton(frame, text="Filter Noisy Images?", variable=self.exp_filter_noise_var).grid(row=row, column=0, sticky='w', padx=5, pady=5)
-        
+        self.add_info_icon(frame, row, 3, "Deprecated if detector is trained with noisy images.")
         row += 1
         ttk.Label(frame, text="Noise Model Path:").grid(row=row, column=0, sticky='w', padx=5, pady=5)
         self.exp_noise_model_entry = ttk.Entry(frame, width=50)
@@ -315,6 +360,7 @@ class RootCNN_V2_GUI:
         row += 1
         self.link_use_gnn_var = tk.BooleanVar(value=True)
         ttk.Checkbutton(frame, text="Use GNN Architecture (Recommended)", variable=self.link_use_gnn_var).grid(row=row, column=0, columnspan=2, sticky='w', padx=5)
+        self.add_info_icon(frame, row, 3, "Graph Neural Network often provides better temporal consistency.")
 
         row += 1
         ttk.Label(frame, text="Log File (optional):").grid(row=row, column=0, sticky='w', padx=5, pady=5)
@@ -378,12 +424,14 @@ class RootCNN_V2_GUI:
         self.assoc_spatial_entry = ttk.Entry(frame, width=10)
         self.assoc_spatial_entry.insert(0, "150")
         self.assoc_spatial_entry.grid(row=row, column=1, sticky='w', padx=5, pady=5)
+        self.add_info_icon(frame, row, 3, "Maximum distance (in pixels) for a tip to be associated between frames.")
 
         row += 1
         ttk.Label(frame, text="Probability Threshold:").grid(row=row, column=0, sticky='w', padx=5, pady=5)
         self.assoc_prob_entry = ttk.Entry(frame, width=10)
         self.assoc_prob_entry.insert(0, "0.2")
         self.assoc_prob_entry.grid(row=row, column=1, sticky='w', padx=5, pady=5)
+        self.add_info_icon(frame, row, 3, "Minimum linker confidence required to form a track.")
 
         row += 1
         ttk.Label(frame, text="Log File (optional):").grid(row=row, column=0, sticky='w', padx=5, pady=5)
