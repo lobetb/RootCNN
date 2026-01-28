@@ -42,7 +42,7 @@ python RootCNN/gui.py
 
 The GUI is organized into four sequential tabs:
 
-0. **Train Noisy Images Detector**: Train to recognize noisy images (where droplets from the water supply can induce false positives).
+0. **Train Noisy Images Detector**: Train to recognize noisy images (where droplets from the water supply can induce false positives). -NOW DEPRECATED if the detector is trained with annotated noisy images-
 1. **Train Detector**: Train the UNet model to identify root tips based on annotated ground truth.
 2. **Detect Tips**: Use a trained detector to predict tips and optionally extract deep features from your image series. Features are necessary for the subsequent tracking step.
 3. **Train Linker**: Train the GNN (graphe neural network) to learn the association between tips in consecutive frames using deep features and spatial relative coordinates.
@@ -67,7 +67,8 @@ The GUI is organized into four sequential tabs:
 RootCNN is optimized for high throughput using PyTorch vectorization. Most of the heavy computation (including tiling, inference, and association) happens directly on the GPU. Mixed precision (FP16) is used for performance.
 
 Current performance on a RTX 4080 GPU:
-- **Detection**: ~7s per 14k*4k from the aeroponics platform
+- **Detector Training**: ~5-6 minute per epoch on 9 annotated images. Accuracy is >0.9 after only one epoch.
+- **Detection**: ~7s per 14k*4k from the aeroponics platform.
 - **Tracking**: Very fast, not measured yet.
 
 Preliminary evaluation of the linking accuracy (on a model trained on a limited dataset of 16 image pairs) shows that it identifies around 50% of the ground-truth links and that 70% of the identified links are correct.
