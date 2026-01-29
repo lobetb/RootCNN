@@ -968,11 +968,39 @@ class RootTipTracker:
             links_path = self.base_folder / "tip_links.json"
             
             # Create formatted output
+            # Pre-cache tips by image name for performance
+            all_involved_images = set()
+            for pair_key in self.all_links:
+                if "->" in pair_key:
+                    img1, img2 = pair_key.split("->")
+                    all_involved_images.add(img1)
+                    all_involved_images.add(img2)
+            
+            tips_cache = {}
+            for img_name in all_involved_images:
+                # Find all tips belonging to this image basename
+                tips = [item for item in self.annotations_data if os.path.basename(item['image']) == img_name]
+                tips_cache[img_name] = tips
+
             formatted_links = {}
             for pair_key, links in self.all_links.items():
-                if links:  # Only save pairs that have links
-                    formatted_links[pair_key] = [{"tip1_index": t1, "tip2_index": t2} 
-                                               for t1, t2 in links]
+                if links and "->" in pair_key: 
+                    img1, img2 = pair_key.split("->")
+                    t1_list = tips_cache.get(img1, [])
+                    t2_list = tips_cache.get(img2, [])
+                    
+                    pair_entries = []
+                    for t1_idx, t2_idx in links:
+                        entry = {"tip1_index": t1_idx, "tip2_index": t2_idx}
+                        # Add coordinates if valid
+                        if t1_idx < len(t1_list):
+                            entry["tip1_x"] = int(t1_list[t1_idx]['x'])
+                            entry["tip1_y"] = int(t1_list[t1_idx]['y'])
+                        if t2_idx < len(t2_list):
+                            entry["tip2_x"] = int(t2_list[t2_idx]['x'])
+                            entry["tip2_y"] = int(t2_list[t2_idx]['y'])
+                        pair_entries.append(entry)
+                    formatted_links[pair_key] = pair_entries
             
             with open(links_path, 'w') as f:
                 json.dump(formatted_links, f, indent=2)
