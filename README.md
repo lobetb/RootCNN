@@ -53,7 +53,7 @@ The GUI is organized into four sequential tabs:
 - `gui.py`: Main entry point for the graphical interface.
 - `src/`: Core source code.
   - `detection/`: UNet models and tip detection logic.
-  - `association/`: Affinity MLP models and tip tracking logic.
+  - `association/`: GNN model and tip tracking logic.
   - `utils/`: Shared utilities (path handling, device management, outlier filtering).
 - `models/`: Default directory for trained model checkpoints (`.pth`).
 - `output/`: Default directory for exported features and tracking results (`.json`). Created when running the program.
