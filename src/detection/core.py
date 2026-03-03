@@ -12,8 +12,7 @@ from tqdm import tqdm
 from concurrent.futures import ThreadPoolExecutor
 from PIL import Image
 from skimage.feature import peak_local_max
-from torchvision import models, transforms
-import torch.nn as nn
+from torchvision import transforms
 
 from src.detection.models import UNet, FeatureExtractor, RootTipDataset
 from src.utils.common import get_device, discover_images, get_timestamp
@@ -27,8 +26,8 @@ def detect_peaks(heatmap, threshold=0.5, min_distance=10):
 def find_support_boundary(image, threshold=40, min_thickness=20):
     """
     Detects the Y-coordinate of the bottom edge of the main plant support.
-    Scans from the bottom of the image upwards, looking for a contiguous
-    dark horizontal region that is at least `min_thickness` pixels tall.
+    Identifies all contiguous dark horizontal bands and returns the bottom
+    of the thickest one that exceeds min_thickness.
     """
     image_arr = np.array(image)
     if image_arr.ndim == 3:
@@ -36,17 +35,36 @@ def find_support_boundary(image, threshold=40, min_thickness=20):
     else:
         gray = image_arr
         
-    row_means = np.mean(gray, axis=1)
-    H = len(row_means)
+    # Use Median instead of 10th percentile to correctly separate grid lines from support.
+    # 10th percentile is too sensitive to the plant stem, merging separate bands.
+    row_vals = np.median(gray, axis=1)
+    H = len(row_vals)
     
-    consecutive_dark = 0
-    for y in range(H - 1, 0, -1):
-        if row_means[y] < threshold:
-            consecutive_dark += 1
+    bands = []
+    current_start = None
+    
+    for y in range(H):
+        if row_vals[y] < threshold:
+            if current_start is None:
+                current_start = y
         else:
-            if consecutive_dark >= min_thickness:
-                return y + consecutive_dark
-            consecutive_dark = 0
+            if current_start is not None:
+                thickness = y - current_start
+                bands.append((current_start, y, thickness))
+                current_start = None
+    
+    # Handle band at the very bottom
+    if current_start is not None:
+        bands.append((current_start, H, H - current_start))
+        
+    if not bands:
+        return 0
+        
+    # Find the thickest band
+    thickest_band = max(bands, key=lambda x: x[2])
+    
+    if thickest_band[2] >= min_thickness:
+        return thickest_band[1] # Return the bottom Y
             
     return 0
 
@@ -130,43 +148,10 @@ def export_features_for_folder(
     layer="enc3",
     threshold=0.5,
     log_file=None,
-    filter_noise=False,
-    noise_model_path=None):
+    stop_event=None):
     
     device = get_device()
     image_files = discover_images(img_folder)
-    
-    # --- Load Noise Classifier (if enabled) ---
-    noise_model = None
-    noise_transform = None
-    if filter_noise and noise_model_path:
-        print(f"Loading Noise Classifier from {noise_model_path}...")
-        try:
-            try:
-                weights = models.ResNet18_Weights.DEFAULT
-                noise_model = models.resnet18(weights=weights)
-            except AttributeError:
-                noise_model = models.resnet18(pretrained=True)
-            
-            # Recreate the classification head (2 classes)
-            num_ftrs = noise_model.fc.in_features
-            noise_model.fc = nn.Linear(num_ftrs, 2)
-            
-            # Load weights
-            noise_model.load_state_dict(torch.load(noise_model_path, map_location=device))
-            noise_model.to(device)
-            noise_model.eval()
-            
-            noise_transform = transforms.Compose([
-                # No Resize here, using full res features consistently with training
-                transforms.ToTensor(),
-                transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-            ])
-            print("Noise Classifier loaded successfully.")
-        except Exception as e:
-            print(f"Error loading noise classifier: {e}")
-            print("Proceeding without noise filtering.")
-            noise_model = None
     
     base_model = UNet().to(device)
     base_model.load_state_dict(torch.load(model_ckpt, map_location=device))
@@ -187,57 +172,6 @@ def export_features_for_folder(
     
     # Initialize logger if log_file is provided
     logger = PerformanceLogger(log_file, log_type="detection") if log_file else None
-    
-    # --- OPTIMIZATION: Batch noise classification upfront ---
-    noisy_images = set()
-    if noise_model and noise_transform:
-        print("Pre-classifying images for noise...")
-        noise_batch_size = 256  # High for 16GB VRAM (RTX 4080)
-        for batch_start in tqdm(range(0, len(image_files), noise_batch_size), desc="Noise Classification"):
-            batch_paths = image_files[batch_start:batch_start + noise_batch_size]
-            batch_tensors = []
-            valid_paths = []
-            
-            for img_path in batch_paths:
-                try:
-                    with Image.open(img_path) as img:
-                        # --- Smart Crop (Consistently with Training) ---
-                        i_rgb = img.convert('RGB')
-                        i_np = np.array(i_rgb)
-                        try:
-                            s_y = find_support_boundary(i_np)
-                        except:
-                            s_y = 0
-                        
-                        w, h = i_rgb.size
-                        # Ensure enough height for a valid crop if we were to crop
-                        # but here we just need a representative patch/root zone
-                        if h - s_y < 224:
-                            st_y = max(0, h - 224)
-                        else:
-                            st_y = s_y
-                            
-                        i_cropped = i_rgb.crop((0, st_y, w, h))
-                        
-                        tensor = noise_transform(i_cropped)
-                        batch_tensors.append(tensor)
-                        valid_paths.append(img_path)
-                except Exception as e:
-                    print(f"Warning: Could not load {img_path.name} for noise check: {e}")
-            
-            if batch_tensors:
-                batch = torch.stack(batch_tensors).to(device)
-                with torch.no_grad():
-                    with torch.amp.autocast('cuda' if 'cuda' in str(device) else 'cpu'):
-                        outputs = noise_model(batch)
-                    _, preds = torch.max(outputs, 1)
-                    
-                for i, pred in enumerate(preds):
-                    if pred.item() == 1:  # Class 1 is NOISY
-                        noisy_images.add(valid_paths[i])
-                        print(f"  Flagged as NOISY: {valid_paths[i].name}")
-        
-        print(f"Noise classification complete. {len(noisy_images)}/{len(image_files)} images flagged as noisy.")
 
     # --- OPTIMIZATION: Async image prefetching ---
     def load_image(img_path):
@@ -248,16 +182,16 @@ def export_features_for_folder(
             image_arr = np.stack([image_arr] * 3, axis=-1)
         return image, image_arr
 
-    # Filter out noisy images from processing
-    clean_image_files = [p for p in image_files if p not in noisy_images]
-
     with ThreadPoolExecutor(max_workers=2) as executor:
         # Submit first image load
         futures = {}
-        for i, img_path in enumerate(clean_image_files[:2]):  # Pre-fetch first 2
+        for i, img_path in enumerate(image_files[:2]):  # Pre-fetch first 2
             futures[img_path] = executor.submit(load_image, img_path)
 
-        for idx, img_path in enumerate(tqdm(clean_image_files, desc="Processing Images")):
+        for idx, img_path in enumerate(tqdm(image_files, desc="Processing Images")):
+            if stop_event and stop_event.is_set():
+                print("Processing cancelled by user.")
+                break
             img_start_time = time.time()
             
             # Get prefetched image or load now
@@ -268,13 +202,11 @@ def export_features_for_folder(
                 image, image_arr = load_image(img_path)
 
             # Submit next image load
-            if idx + 2 < len(clean_image_files):
-                next_path = clean_image_files[idx + 2]
+            if idx + 2 < len(image_files):
+                next_path = image_files[idx + 2]
                 futures[next_path] = executor.submit(load_image, next_path)
 
             image_h, image_w = image_arr.shape[:2]
-            
-            # (No longer need noise check inside the loop)
    
             if use_gt and ann:
                 coords = ann.get(img_path.name, [])
@@ -357,7 +289,7 @@ def export_features_for_folder(
     if logger:
         logger.save()
 
-def train_detection(img_dir, ann_file, epochs=20, batch_size=4, val_split=0.2, patience=5, model_name="model.pth", log_file=None):
+def train_detection(img_dir, ann_file, epochs=20, batch_size=4, val_split=0.2, patience=5, model_name="model.pth", log_file=None, stop_event=None):
     device = get_device()
     with open(ann_file) as f:
         ann = json.load(f)
@@ -393,6 +325,9 @@ def train_detection(img_dir, ann_file, epochs=20, batch_size=4, val_split=0.2, p
         total_train_accuracy = 0
         
         for i, (x, y) in enumerate(loader):
+            if stop_event and stop_event.is_set():
+                print("Training cancelled by user.")
+                return
             x, y = x.to(device), y.to(device)
             optimizer.zero_grad()
             

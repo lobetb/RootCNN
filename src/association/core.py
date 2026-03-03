@@ -9,10 +9,10 @@ from torch.utils.data import DataLoader
 
 from src.association.models import AffinityMLP, LinkingDataset
 from src.association.gnn_models import TipGNN
-from src.utils.common import get_device, get_timestamp, get_plant_id, filter_outlier_images
+from src.utils.common import get_device, get_timestamp, get_plant_id, filter_outlier_images, get_time_diff_hours
 from src.utils.logging import PerformanceLogger
 
-def compute_cost_matrix_from_features(tips1, tips2, model, device, spatial_threshold=150):
+def compute_cost_matrix_from_features(tips1, tips2, model, device, spatial_threshold=150, time_diff=1.0):
     num1 = len(tips1)
     num2 = len(tips2)
     cost_matrix = np.full((num1, num2), 1e6)
@@ -21,10 +21,18 @@ def compute_cost_matrix_from_features(tips1, tips2, model, device, spatial_thres
         return cost_matrix
 
     # 1. Prepare features and coordinates as tensors
-    feats1 = torch.tensor([t['features'] for t in tips1], device=device).float() # (N1, 256)
+    if hasattr(tips1[0], '_feat_tensor') and tips1[0]['_feat_tensor'] is not None:
+        feats1 = torch.stack([t['_feat_tensor'] for t in tips1])
+    else:
+        feats1 = torch.tensor([t['features'] for t in tips1], device=device).float()
+    
     coords1 = torch.tensor([[t['x'], t['y']] for t in tips1], device=device).float() # (N1, 2)
     
-    feats2 = torch.tensor([t['features'] for t in tips2], device=device).float() # (N2, 256)
+    if hasattr(tips2[0], '_feat_tensor') and tips2[0]['_feat_tensor'] is not None:
+        feats2 = torch.stack([t['_feat_tensor'] for t in tips2])
+    else:
+        feats2 = torch.tensor([t['features'] for t in tips2], device=device).float()
+    
     coords2 = torch.tensor([[t['x'], t['y']] for t in tips2], device=device).float() # (N2, 2)
 
     # 2. Compute pairwise distances
@@ -41,8 +49,8 @@ def compute_cost_matrix_from_features(tips1, tips2, model, device, spatial_thres
     f1_batch = feats1[idx1] 
     f2_batch = feats2[idx2] 
     
-    dxy = coords2[idx2] - coords1[idx1] 
-    dist_batch = dist_matrix[idx1, idx2].unsqueeze(1) 
+    dxy = (coords2[idx2] - coords1[idx1]) / max(0.01, time_diff)
+    dist_batch = (dist_matrix[idx1, idx2].unsqueeze(1)) / max(0.01, time_diff)
     
     spatial_feats = torch.cat([dxy / 100.0, dist_batch / 100.0], dim=1) 
     batch_input = torch.cat([f1_batch, f2_batch, spatial_feats], dim=1) 
@@ -56,7 +64,7 @@ def compute_cost_matrix_from_features(tips1, tips2, model, device, spatial_thres
     
     return cost_matrix
 
-def compute_gnn_cost_matrix(tips1, tips2, model, device, spatial_threshold=150):
+def compute_gnn_cost_matrix(tips1, tips2, model, device, spatial_threshold=150, time_diff=1.0):
     """
     Computes the cost (1 - probability) matrix using the GNN model.
     """
@@ -67,10 +75,16 @@ def compute_gnn_cost_matrix(tips1, tips2, model, device, spatial_threshold=150):
     if num1 == 0 or num2 == 0:
         return cost_matrix
         
-    feat1 = torch.tensor([t['features'] for t in tips1], device=device).float()
+    if hasattr(tips1[0], '_feat_tensor') and tips1[0]['_feat_tensor'] is not None:
+        feat1 = torch.stack([t['_feat_tensor'] for t in tips1])
+    else:
+        feat1 = torch.tensor([t['features'] for t in tips1], device=device).float()
     coord1 = torch.tensor([[t['x'], t['y']] for t in tips1], device=device).float()
     
-    feat2 = torch.tensor([t['features'] for t in tips2], device=device).float()
+    if hasattr(tips2[0], '_feat_tensor') and tips2[0]['_feat_tensor'] is not None:
+        feat2 = torch.stack([t['_feat_tensor'] for t in tips2])
+    else:
+        feat2 = torch.tensor([t['features'] for t in tips2], device=device).float()
     coord2 = torch.tensor([[t['x'], t['y']] for t in tips2], device=device).float()
     
     # 1. Build Graph
@@ -88,8 +102,9 @@ def compute_gnn_cost_matrix(tips1, tips2, model, device, spatial_threshold=150):
     
     edge_index = torch.stack([src_global, dst_global], dim=0)
     
-    dxy = coord2[dst_local] - coord1[src_local]
-    dist = dist_matrix[src_local, dst_local].unsqueeze(1)
+    t_delta = max(0.01, time_diff)
+    dxy = (coord2[dst_local] - coord1[src_local]) / t_delta
+    dist = (dist_matrix[src_local, dst_local].unsqueeze(1)) / t_delta
     edge_spatials = torch.cat([dxy, dist], dim=1) / 100.0
     
     with torch.no_grad():
@@ -100,7 +115,7 @@ def compute_gnn_cost_matrix(tips1, tips2, model, device, spatial_threshold=150):
     
     return cost_matrix
 
-def associate_tips_multi_plant(features_json, model_path, output_json, output_links_json=None, spatial_threshold=150, prob_threshold=0.2, log_file=None):
+def associate_tips_multi_plant(features_json, model_path, output_json, output_links_json=None, spatial_threshold=150, prob_threshold=0.2, log_file=None, stop_event=None):
     device = get_device()
     
     with open(features_json, 'r') as f:
@@ -109,7 +124,7 @@ def associate_tips_multi_plant(features_json, model_path, output_json, output_li
     # Group by plant ID, then by image
     plant_data = {}
     for entry in raw_data:
-        pid = get_plant_id(entry['basename'])
+        pid = get_plant_id(entry.get('basename', os.path.basename(entry['image'])))
         if pid not in plant_data:
             plant_data[pid] = {}
         
@@ -145,8 +160,18 @@ def associate_tips_multi_plant(features_json, model_path, output_json, output_li
         sorted_imgs = sorted(images_dict.keys(), key=get_timestamp)
         valid_imgs = filter_outlier_images(sorted_imgs, images_dict)
         
+        # --- OPTIMIZATION: Pre-convert all features to tensors for this plant ---
+        for img_rel in sorted_imgs:
+            for t in images_dict[img_rel]:
+                # Pre-convert and store on device to avoid redundant copies
+                t['_feat_tensor'] = torch.tensor(t['features'], device=device).float()
+
         prev_tips = []
+
         for img_rel_path in tqdm(sorted_imgs, desc=f"Tracking {pid}"):
+            if stop_event and stop_event.is_set():
+                print("Tracking cancelled by user.")
+                return
             img_start_time = time.time()
             if img_rel_path not in valid_imgs:
                 continue
@@ -158,9 +183,10 @@ def associate_tips_multi_plant(features_json, model_path, output_json, output_li
                     "y": t['y'],
                     "score": t.get('score', 1.0),
                     "features": t['features'],
+                    "_feat_tensor": t.get('_feat_tensor'), # Pass the pre-converted tensor
                     "id": -1,
                     "image": t['image'], # full relative path
-                    "basename": t['basename']
+                    "basename": t.get('basename', os.path.basename(t['image']))
                 })
 
             if not prev_tips:
@@ -168,10 +194,15 @@ def associate_tips_multi_plant(features_json, model_path, output_json, output_li
                     t["id"] = global_next_id
                     global_next_id += 1
             else:
+                # Calculate time difference for normalization
+                t1_name = prev_tips[0]['basename']
+                t2_name = curr_tips[0]['basename']
+                time_diff = get_time_diff_hours(t1_name, t2_name)
+                
                 if is_gnn:
-                    costs = compute_gnn_cost_matrix(prev_tips, curr_tips, model, device, spatial_threshold)
+                    costs = compute_gnn_cost_matrix(prev_tips, curr_tips, model, device, spatial_threshold, time_diff)
                 else:
-                    costs = compute_cost_matrix_from_features(prev_tips, curr_tips, model, device, spatial_threshold)
+                    costs = compute_cost_matrix_from_features(prev_tips, curr_tips, model, device, spatial_threshold, time_diff)
                 row_ind, col_ind = linear_sum_assignment(costs)
                 
                 assigned_curr = set()
@@ -210,7 +241,7 @@ def associate_tips_multi_plant(features_json, model_path, output_json, output_li
             
             all_tracks.append({
                 "image": curr_tips[0]["image"],
-                "basename": curr_tips[0]["basename"],
+                "basename": curr_tips[0].get("basename", os.path.basename(curr_tips[0]["image"])),
                 "plant_id": pid,
                 "tips": [{"id": t["id"], "x": t["x"], "y": t["y"], "score": t["score"], "assoc_score": t.get("assoc_score", 0.0)} for t in curr_tips]
             })
@@ -244,13 +275,74 @@ def associate_tips_multi_plant(features_json, model_path, output_json, output_li
     if logger:
         logger.save()
 
-def train_linker(features_json, links_json, epochs=20, batch_size=32, model_name="tip_linker.pth", log_file=None, use_gnn=True):
+def _prepare_data_from_consolidated_links(links_json):
+    """
+    Reconstructs all_features and all_links structures from the consolidated JSON.
+    """
+    with open(links_json, 'r') as f:
+        formatted_links = json.load(f)
+        
+    all_features = []
+    all_links_index_based = {}
+    
+    # Track which tips we've already added to all_features to avoid duplicates
+    # Key: (image_basename, tip_x, tip_y)
+    seen_tips = {}
+    
+    for pair_key, pairs in formatted_links.items():
+        if "->" not in pair_key:
+            continue
+            
+        img1_name, img2_name = pair_key.split("->")
+        all_links_index_based[pair_key] = []
+        
+        for p in pairs:
+            # Reconstruct tip1
+            t1_key = (img1_name, p['tip1_x'], p['tip1_y'])
+            if t1_key not in seen_tips:
+                t1 = {
+                    'image': img1_name,
+                    'basename': img1_name,
+                    'x': p['tip1_x'],
+                    'y': p['tip1_y'],
+                    'features': p.get('tip1_features', [])
+                }
+                seen_tips[t1_key] = len([f for f in all_features if f['basename'] == img1_name])
+                all_features.append(t1)
+            
+            # Reconstruct tip2
+            t2_key = (img2_name, p['tip2_x'], p['tip2_y'])
+            if t2_key not in seen_tips:
+                t2 = {
+                    'image': img2_name,
+                    'basename': img2_name,
+                    'x': p['tip2_x'],
+                    'y': p['tip2_y'],
+                    'features': p.get('tip2_features', [])
+                }
+                seen_tips[t2_key] = len([f for f in all_features if f['basename'] == img2_name])
+                all_features.append(t2)
+                
+            # Note: The indices in the formatted_links were relative to the tips list 
+            # for that image AT THE TIME OF ANNOTATION.
+            # However, resolve_link_indices handles matching via coordinates, 
+            # which is preferred and robust.
+            all_links_index_based[pair_key].append({
+                'tip1_index': p['tip1_index'],
+                'tip2_index': p['tip2_index'],
+                'tip1_x': p['tip1_x'],
+                'tip1_y': p['tip1_y'],
+                'tip2_x': p['tip2_x'],
+                'tip2_y': p['tip2_y']
+            })
+            
+    return all_features, all_links_index_based
+
+def train_linker(links_json, epochs=20, batch_size=32, model_name="tip_linker.pth", log_file=None, use_gnn=True, stop_event=None):
     device = get_device()
     
-    with open(features_json, 'r') as f:
-        all_features = json.load(f)
-    with open(links_json, 'r') as f:
-        all_links = json.load(f)
+    print(f"Loading training data from consolidated file: {links_json}")
+    all_features, all_links = _prepare_data_from_consolidated_links(links_json)
         
     os.makedirs("models", exist_ok=True)
     model_save_path = os.path.join("models", model_name)
@@ -261,15 +353,17 @@ def train_linker(features_json, links_json, epochs=20, batch_size=32, model_name
         # Organize features by basename
         features_by_img = {}
         for item in all_features:
-            if item['basename'] not in features_by_img:
-                features_by_img[item['basename']] = []
-            features_by_img[item['basename']].append(item)
+            bname = item.get('basename', os.path.basename(item['image']))
+            if bname not in features_by_img:
+                features_by_img[bname] = []
+            features_by_img[bname].append(item)
             
         train_pairs = []
         for link_key, links in all_links.items():
             img1_name, img2_name = link_key.split("->")
             if img1_name in features_by_img and img2_name in features_by_img:
-                true_set = set((l['tip1_index'], l['tip2_index']) for l in links)
+                from src.association.gnn_utils import resolve_link_indices
+                true_set = resolve_link_indices(links, features_by_img[img1_name], features_by_img[img2_name])
                 train_pairs.append({
                     'img1': features_by_img[img1_name],
                     'img2': features_by_img[img2_name],
@@ -283,20 +377,35 @@ def train_linker(features_json, links_json, epochs=20, batch_size=32, model_name
         
         model = TipGNN().to(device)
         optimizer = torch.optim.Adam(model.parameters(), lr=5e-4)
-        pos_weight = torch.tensor([50.0], device=device) 
+        # Weighting: User prefers missing a link over creating a false positive.
+        # Reduced from 50.0 to 1.0 to reflect this bias.
+        pos_weight = torch.tensor([1.0], device=device) 
         criterion = torch.nn.BCEWithLogitsLoss(pos_weight=pos_weight)
         
-        from train_gnn_standalone import build_graph_batch
+        # Stability: Learning rate scheduler and best model tracking
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=3)
+        best_val_loss = float('inf')
+
+        from src.association.gnn_utils import build_graph_batch, resolve_link_indices
         
         for epoch in range(epochs):
             epoch_start_time = time.time()
+            
+            # --- Training Stage ---
             model.train()
-            total_loss = 0
-            count = 0
+            total_train_loss = 0
+            train_count = 0
             np.random.shuffle(train_set)
             
             for pair in train_set:
-                batch_data = build_graph_batch(pair['img1'], pair['img2'], pair['links'], device)
+                if stop_event and stop_event.is_set():
+                    print("Training cancelled by user.")
+                    return
+                t1_name = pair['img1'][0].get('basename', os.path.basename(pair['img1'][0]['image']))
+                t2_name = pair['img2'][0].get('basename', os.path.basename(pair['img2'][0]['image']))
+                time_diff = get_time_diff_hours(t1_name, t2_name)
+                
+                batch_data = build_graph_batch(pair['img1'], pair['img2'], pair['links'], device, time_diff=time_diff)
                 if batch_data is None: continue
                 
                 node_feats, edge_index, edge_spatials, labels = batch_data
@@ -304,24 +413,55 @@ def train_linker(features_json, links_json, epochs=20, batch_size=32, model_name
                 preds = model(node_feats, edge_index, edge_spatials)
                 loss = criterion(preds, labels)
                 loss.backward()
+                
+                # Stability: Gradient clipping
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+                
                 optimizer.step()
-                total_loss += loss.item()
-                count += 1
+                total_train_loss += loss.item()
+                train_count += 1
             
-            avg_loss = total_loss / max(1, count)
+            avg_train_loss = total_train_loss / max(1, train_count)
+            
+            # --- Validation Stage ---
+            model.eval()
+            total_val_loss = 0
+            val_count = 0
+            with torch.no_grad():
+                for pair in val_set:
+                    t1_name = pair['img1'][0].get('basename', os.path.basename(pair['img1'][0]['image']))
+                    t2_name = pair['img2'][0].get('basename', os.path.basename(pair['img2'][0]['image']))
+                    time_diff = get_time_diff_hours(t1_name, t2_name)
+                    
+                    batch_data = build_graph_batch(pair['img1'], pair['img2'], pair['links'], device, time_diff=time_diff)
+                    if batch_data is None: continue
+                    node_feats, edge_index, edge_spatials, labels = batch_data
+                    preds = model(node_feats, edge_index, edge_spatials)
+                    loss = criterion(preds, labels)
+                    total_val_loss += loss.item()
+                    val_count += 1
+            avg_val_loss = total_val_loss / max(1, val_count)
+            
+            # Update scheduler
+            scheduler.step(avg_val_loss)
+            
             epoch_time = time.time() - epoch_start_time
-            print(f"Epoch {epoch+1} GNN Loss: {avg_loss:.6f} Time: {epoch_time:.2f}s")
+            print(f"Epoch {epoch+1} GNN Loss - Train: {avg_train_loss:.6f} Val: {avg_val_loss:.6f} Time: {epoch_time:.2f}s")
+            
+            # Save best model
+            if avg_val_loss < best_val_loss:
+                best_val_loss = avg_val_loss
+                torch.save(model.state_dict(), model_save_path)
+                print(f"  --> Saved new best model with val_loss: {avg_val_loss:.6f}")
             
             if logger:
-                logger.log_training_epoch(epoch=epoch+1, train_loss=avg_loss, val_loss=avg_loss, epoch_time=epoch_time)
-                
-        torch.save(model.state_dict(), model_save_path)
+                logger.log_training_epoch(epoch=epoch+1, train_loss=avg_train_loss, val_loss=avg_val_loss, epoch_time=epoch_time)
         
     else:
         # Original MLP Training Logic
         tip_features = {}
         for f in all_features:
-            b = f['basename']
+            b = f.get('basename', os.path.basename(f['image']))
             if b not in tip_features: tip_features[b] = []
             tip_features[b].append(f)
             
@@ -337,6 +477,9 @@ def train_linker(features_json, links_json, epochs=20, batch_size=32, model_name
             model.train()
             total_loss = 0
             for x, y in loader:
+                if stop_event and stop_event.is_set():
+                    print("Training cancelled by user.")
+                    return
                 x, y = x.to(device), y.to(device)
                 optimizer.zero_grad()
                 pred = model(x)

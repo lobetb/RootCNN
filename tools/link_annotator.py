@@ -994,11 +994,17 @@ class RootTipTracker:
                         entry = {"tip1_index": t1_idx, "tip2_index": t2_idx}
                         # Add coordinates if valid
                         if t1_idx < len(t1_list):
-                            entry["tip1_x"] = int(t1_list[t1_idx]['x'])
-                            entry["tip1_y"] = int(t1_list[t1_idx]['y'])
+                            t1 = t1_list[t1_idx]
+                            entry["tip1_x"] = int(t1['x'])
+                            entry["tip1_y"] = int(t1['y'])
+                            if 'features' in t1:
+                                entry["tip1_features"] = t1['features']
                         if t2_idx < len(t2_list):
-                            entry["tip2_x"] = int(t2_list[t2_idx]['x'])
-                            entry["tip2_y"] = int(t2_list[t2_idx]['y'])
+                            t2 = t2_list[t2_idx]
+                            entry["tip2_x"] = int(t2['x'])
+                            entry["tip2_y"] = int(t2['y'])
+                            if 'features' in t2:
+                                entry["tip2_features"] = t2['features']
                         pair_entries.append(entry)
                     formatted_links[pair_key] = pair_entries
             

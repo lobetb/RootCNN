@@ -1,6 +1,7 @@
 import torch
 import re
 import os
+from datetime import datetime
 import numpy as np
 from pathlib import Path
 
@@ -28,6 +29,20 @@ def get_timestamp(filename):
     """Extracts yyyymmddhhmmss from filename."""
     match = re.search(r'(\d{14})', filename)
     return match.group(0) if match else filename
+
+def get_time_diff_hours(filename1, filename2):
+    """Calculates hours between two timestamps extracted from filenames."""
+    t1_str = get_timestamp(filename1)
+    t2_str = get_timestamp(filename2)
+    
+    try:
+        dt1 = datetime.strptime(t1_str, "%Y%m%d%H%M%S")
+        dt2 = datetime.strptime(t2_str, "%Y%m%d%H%M%S")
+        diff = dt2 - dt1
+        return diff.total_seconds() / 3600.0
+    except (ValueError, TypeError):
+        # Default to 1 hour if timestamps are missing or invalid
+        return 1.0
 
 def discover_images(folder_path):
     """Recursively discover .jpg and .png images in a folder."""

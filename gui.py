@@ -4,6 +4,7 @@ import threading
 import sys
 import os
 import queue
+import subprocess
 from pathlib import Path
 
 # Fix python path to allow imports from src
@@ -11,7 +12,6 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from src.detection.core import train_detection, export_features_for_folder
 from src.association.core import train_linker, associate_tips_multi_plant
-from src.detection.noise import train_noise_classifier # Import from src
 
 
 class ThreadSafeConsole:
@@ -82,9 +82,10 @@ class RootCNN_V2_GUI:
         self.notebook = ttk.Notebook(root)
         self.notebook.pack(fill='both', expand=True, padx=10, pady=10)
 
+        self.stop_event = threading.Event()
+
         # Tabs
-        # Tabs
-        self.create_noise_train_tab() # New tab
+        self.create_annotation_tools_tab()
         self.create_detection_train_tab()
         self.create_detect_tips_tab()
         self.create_linker_train_tab()
@@ -122,60 +123,63 @@ class RootCNN_V2_GUI:
         ToolTip(info_icon, text)
         return info_icon
 
-    def run_wrapper(self, func, *args, **kwargs):
+    def run_wrapper(self, start_btn, stop_btn, func, *args, **kwargs):
         def task():
+            start_btn.config(state=tk.DISABLED)
+            stop_btn.config(state=tk.NORMAL)
+            self.stop_event.clear()
+            
+            # Inject stop_event into kwargs
+            kwargs['stop_event'] = self.stop_event
+            
             try:
                 func(*args, **kwargs)
-                messagebox.showinfo("Success", "Operation completed successfully!")
+                if not self.stop_event.is_set():
+                    messagebox.showinfo("Success", "Operation completed successfully!")
+                else:
+                    messagebox.showinfo("Cancelled", "Operation was cancelled.")
             except Exception as e:
                 messagebox.showerror("Error", f"An error occurred: {str(e)}")
+            finally:
+                start_btn.config(state=tk.NORMAL)
+                stop_btn.config(state=tk.DISABLED)
         
         threading.Thread(target=task, daemon=True).start()
 
-    # --- TAB: Noise Training ---
-    def create_noise_train_tab(self):
+    def stop_execution(self):
+        self.stop_event.set()
+        print("\n[STOP] Cancellation requested...")
+
+    # --- TAB: Annotation Tools ---
+    def create_annotation_tools_tab(self):
         frame = ttk.Frame(self.notebook)
-        self.notebook.add(frame, text="0. Train Noise Filter")
+        self.notebook.add(frame, text="0. Annotation Tools")
         
         row = 0
-        ttk.Label(frame, text="DEPRECATED : not necessary if the detector is trained with noisy images").grid(row=row, column=0, sticky='w', padx=5, pady=5)
+        ttk.Label(frame, text="Use these tools to generate training data for the pipeline.", font=("Helvetica", 11, "italic")).grid(row=row, column=0, columnspan=3, sticky='w', padx=5, pady=10)
 
         row += 1
-        ttk.Label(frame, text="Dataset Folder (contains 'clean'/'noisy'):").grid(row=row, column=0, sticky='w', padx=5, pady=5)
-        self.noise_train_data_entry = ttk.Entry(frame, width=50)
-        self.noise_train_data_entry.grid(row=row, column=1, padx=5, pady=5)
-        ttk.Button(frame, text="Browse", command=lambda: self.browse_dir(self.noise_train_data_entry)).grid(row=row, column=2, padx=5, pady=5)
-        self.add_info_icon(frame, row, 3, "Folder should contain subfolders 'clean' and 'noisy' with respective images.")
+        ttk.Label(frame, text="1. Tips Annotator:", font=("Helvetica", 10, "bold")).grid(row=row, column=0, sticky='w', padx=5, pady=5)
+        ttk.Label(frame, text="Manually annotate root tips in images for training the detector (Step 1).").grid(row=row, column=1, sticky='w', padx=5, pady=5)
+        ttk.Button(frame, text="Launch Tips Annotator", command=lambda: self.launch_script("tools/tips_annotator.py")).grid(row=row, column=2, padx=5, pady=5)
 
         row += 1
-        ttk.Label(frame, text="Epochs:").grid(row=row, column=0, sticky='w', padx=5, pady=5)
-        self.noise_epochs_entry = ttk.Entry(frame, width=10)
-        self.noise_epochs_entry.insert(0, "15")
-        self.noise_epochs_entry.grid(row=row, column=1, sticky='w', padx=5, pady=5)
-        self.add_info_icon(frame, row, 3, "Number of times to iterate over the entire dataset. 10-20 is usually enough.")
+        ttk.Label(frame, text="2. Link Annotator:", font=("Helvetica", 10, "bold")).grid(row=row, column=0, sticky='w', padx=5, pady=5)
+        ttk.Label(frame, text="Manually annotate links between tips across consecutive frames for training the linker (Step 3).").grid(row=row, column=1, sticky='w', padx=5, pady=5)
+        ttk.Button(frame, text="Launch Link Annotator", command=lambda: self.launch_script("tools/link_annotator.py")).grid(row=row, column=2, padx=5, pady=5)
 
-        row += 1
-        ttk.Label(frame, text="Output Model Name:").grid(row=row, column=0, sticky='w', padx=5, pady=5)
-        self.noise_model_name_entry = ttk.Entry(frame, width=30)
-        self.noise_model_name_entry.insert(0, "models/noise_classifier.pth")
-        self.noise_model_name_entry.grid(row=row, column=1, sticky='w', padx=5, pady=5)
-
-        row += 1
-        ttk.Button(frame, text="Start Noise Model Training", command=self.run_noise_train).grid(row=row, column=0, columnspan=3, pady=20)
-
-    def run_noise_train(self):
-        data_dir = self.noise_train_data_entry.get()
-        epochs = int(self.noise_epochs_entry.get())
-        output_model = self.noise_model_name_entry.get()
-
-        if not data_dir:
-            messagebox.showwarning("Input Required", "Please provide dataset folder.")
+    def launch_script(self, script_path):
+        script_abs_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), script_path)
+        if not os.path.exists(script_abs_path):
+            messagebox.showerror("Error", f"Script not found: {script_path}")
             return
-            
-        # Create output directory for model if needed
-        os.makedirs(os.path.dirname(output_model), exist_ok=True)
-
-        self.run_wrapper(train_noise_classifier, data_dir, output_model, epochs=epochs)
+        
+        print(f"Launching {script_path}...")
+        try:
+            # We use the same python interpreter that is currently running
+            subprocess.Popen([sys.executable, script_abs_path])
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to launch script: {str(e)}")
 
     # --- TAB: Detection Training ---
     def create_detection_train_tab(self):
@@ -222,7 +226,10 @@ class RootCNN_V2_GUI:
         ttk.Button(frame, text="Browse", command=lambda: self.browse_file(self.det_train_log_entry, save=True)).grid(row=row, column=2, padx=5, pady=5)
 
         row += 1
-        ttk.Button(frame, text="Start Detector Training", command=self.run_det_train).grid(row=row, column=0, columnspan=3, pady=20)
+        self.det_start_btn = ttk.Button(frame, text="Start Detector Training", command=self.run_det_train)
+        self.det_start_btn.grid(row=row, column=0, pady=20)
+        self.det_stop_btn = ttk.Button(frame, text="Stop Execution", command=self.stop_execution, state=tk.DISABLED)
+        self.det_stop_btn.grid(row=row, column=1, pady=20)
 
     def run_det_train(self):
         img_dir = self.det_train_img_entry.get()
@@ -236,7 +243,7 @@ class RootCNN_V2_GUI:
             messagebox.showwarning("Input Required", "Please provide image folder and annotations.")
             return
 
-        self.run_wrapper(train_detection, img_dir, ann_file, epochs=epochs, batch_size=bs, model_name=mname, log_file=log_file)
+        self.run_wrapper(self.det_start_btn, self.det_stop_btn, train_detection, img_dir, ann_file, epochs=epochs, batch_size=bs, model_name=mname, log_file=log_file)
 
     # --- TAB: Detect Tips ---
     def create_detect_tips_tab(self):
@@ -293,20 +300,12 @@ class RootCNN_V2_GUI:
         self.exp_log_entry.insert(0, "output/logs/detection.json")
         self.exp_log_entry.grid(row=row, column=1, padx=5, pady=5)
         ttk.Button(frame, text="Browse", command=lambda: self.browse_file(self.exp_log_entry, save=True)).grid(row=row, column=2, padx=5, pady=5)
-        
-        row += 1
-        self.exp_filter_noise_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(frame, text="Filter Noisy Images?", variable=self.exp_filter_noise_var).grid(row=row, column=0, sticky='w', padx=5, pady=5)
-        self.add_info_icon(frame, row, 3, "Deprecated if detector is trained with noisy images.")
-        row += 1
-        ttk.Label(frame, text="Noise Model Path:").grid(row=row, column=0, sticky='w', padx=5, pady=5)
-        self.exp_noise_model_entry = ttk.Entry(frame, width=50)
-        self.exp_noise_model_entry.insert(0, "models/noise_classifier.pth")
-        self.exp_noise_model_entry.grid(row=row, column=1, padx=5, pady=5)
-        ttk.Button(frame, text="Browse", command=lambda: self.browse_file(self.exp_noise_model_entry)).grid(row=row, column=2, padx=5, pady=5)
 
         row += 1
-        ttk.Button(frame, text="Run Detection & Feature Extraction", command=self.run_feature_export).grid(row=row, column=0, columnspan=3, pady=20)
+        self.exp_start_btn = ttk.Button(frame, text="Run Detection & Feature Extraction", command=self.run_feature_export)
+        self.exp_start_btn.grid(row=row, column=0, pady=20)
+        self.exp_stop_btn = ttk.Button(frame, text="Stop Execution", command=self.stop_execution, state=tk.DISABLED)
+        self.exp_stop_btn.grid(row=row, column=1, pady=20)
 
     def run_feature_export(self):
         img_folder = self.exp_img_entry.get()
@@ -317,15 +316,12 @@ class RootCNN_V2_GUI:
         thresh = float(self.exp_thresh_entry.get())
         ann = self.exp_ann_entry.get()
         log_file = self.exp_log_entry.get().strip() or None
-        
-        filter_noise = self.exp_filter_noise_var.get()
-        noise_model_path = self.exp_noise_model_entry.get()
 
         if not img_folder or not model_ckpt:
             messagebox.showwarning("Input Required", "Please provide image folder and model.")
             return
 
-        self.run_wrapper(export_features_for_folder, img_folder, model_ckpt, out_json, annotations_json=ann, use_gt=use_gt, extract_features=extract_feat, threshold=thresh, log_file=log_file, filter_noise=filter_noise, noise_model_path=noise_model_path)
+        self.run_wrapper(self.exp_start_btn, self.exp_stop_btn, export_features_for_folder, img_folder, model_ckpt, out_json, annotations_json=ann, use_gt=use_gt, extract_features=extract_feat, threshold=thresh, log_file=log_file)
 
     # --- TAB: Linker Training ---
     def create_linker_train_tab(self):
@@ -333,17 +329,11 @@ class RootCNN_V2_GUI:
         self.notebook.add(frame, text="3. Train Linker")
 
         row = 0
-        ttk.Label(frame, text="Features JSON:").grid(row=row, column=0, sticky='w', padx=5, pady=5)
-        self.link_feat_entry = ttk.Entry(frame, width=50)
-        self.link_feat_entry.insert(0, "output/deep_tip_features.json")
-        self.link_feat_entry.grid(row=row, column=1, padx=5, pady=5)
-        ttk.Button(frame, text="Browse", command=lambda: self.browse_file(self.link_feat_entry)).grid(row=row, column=2, padx=5, pady=5)
-
-        row += 1
         ttk.Label(frame, text="Link Annotations JSON:").grid(row=row, column=0, sticky='w', padx=5, pady=5)
         self.link_ann_entry = ttk.Entry(frame, width=50)
         self.link_ann_entry.grid(row=row, column=1, padx=5, pady=5)
         ttk.Button(frame, text="Browse", command=lambda: self.browse_file(self.link_ann_entry)).grid(row=row, column=2, padx=5, pady=5)
+        self.add_info_icon(frame, row, 3, "Unified file from Link Annotator (tip_links.json) containing features and coordinates.")
 
         row += 1
         ttk.Label(frame, text="Epochs:").grid(row=row, column=0, sticky='w', padx=5, pady=5)
@@ -370,21 +360,23 @@ class RootCNN_V2_GUI:
         ttk.Button(frame, text="Browse", command=lambda: self.browse_file(self.link_train_log_entry, save=True)).grid(row=row, column=2, padx=5, pady=5)
 
         row += 1
-        ttk.Button(frame, text="Start Linker Training", command=self.run_link_train).grid(row=row, column=0, columnspan=3, pady=20)
+        self.link_start_btn = ttk.Button(frame, text="Start Linker Training", command=self.run_link_train)
+        self.link_start_btn.grid(row=row, column=0, pady=20)
+        self.link_stop_btn = ttk.Button(frame, text="Stop Execution", command=self.stop_execution, state=tk.DISABLED)
+        self.link_stop_btn.grid(row=row, column=1, pady=20)
 
     def run_link_train(self):
-        feat_json = self.link_feat_entry.get()
         ann_json = self.link_ann_entry.get()
         epochs = int(self.link_epochs_entry.get())
         mname = self.link_model_entry.get().strip()
         log_file = self.link_train_log_entry.get().strip() or None
         use_gnn = self.link_use_gnn_var.get()
 
-        if not feat_json or not ann_json:
-            messagebox.showwarning("Input Required", "Please provide features and link annotations.")
+        if not ann_json:
+            messagebox.showwarning("Input Required", "Please provide link annotations.")
             return
 
-        self.run_wrapper(train_linker, feat_json, ann_json, epochs=epochs, model_name=mname, log_file=log_file, use_gnn=use_gnn)
+        self.run_wrapper(self.link_start_btn, self.link_stop_btn, train_linker, ann_json, epochs=epochs, model_name=mname, log_file=log_file, use_gnn=use_gnn)
 
     # --- TAB: Association ---
     def create_association_tab(self):
@@ -441,7 +433,10 @@ class RootCNN_V2_GUI:
         ttk.Button(frame, text="Browse", command=lambda: self.browse_file(self.assoc_log_entry, save=True)).grid(row=row, column=2, padx=5, pady=5)
 
         row += 1
-        ttk.Button(frame, text="Run Tip Tracking", command=self.run_association).grid(row=row, column=0, columnspan=3, pady=20)
+        self.assoc_start_btn = ttk.Button(frame, text="Run Tip Tracking", command=self.run_association)
+        self.assoc_start_btn.grid(row=row, column=0, pady=20)
+        self.assoc_stop_btn = ttk.Button(frame, text="Stop Execution", command=self.stop_execution, state=tk.DISABLED)
+        self.assoc_stop_btn.grid(row=row, column=1, pady=20)
 
     def run_association(self):
         feat_json = self.assoc_feat_entry.get()
@@ -456,7 +451,7 @@ class RootCNN_V2_GUI:
             messagebox.showwarning("Input Required", "Please provide features and linker model.")
             return
 
-        self.run_wrapper(associate_tips_multi_plant, feat_json, model_path, out_json, output_links_json=out_links_json, spatial_threshold=spatial, prob_threshold=prob, log_file=log_file)
+        self.run_wrapper(self.assoc_start_btn, self.assoc_stop_btn, associate_tips_multi_plant, feat_json, model_path, out_json, output_links_json=out_links_json, spatial_threshold=spatial, prob_threshold=prob, log_file=log_file)
 
 if __name__ == "__main__":
     root = tk.Tk()

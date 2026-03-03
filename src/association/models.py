@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import Dataset
 import numpy as np
-from src.utils.common import get_timestamp, filter_outlier_images
+from src.utils.common import get_timestamp, filter_outlier_images, get_time_diff_hours
 
 class AffinityMLP(nn.Module):
     def __init__(self, feature_dim=256):
@@ -50,14 +50,17 @@ class LinkingDataset(Dataset):
             tips1 = tip_features[img1_name]
             tips2 = tip_features[img2_name]
             
-            true_links = set((l['tip1_index'], l['tip2_index']) for l in links)
+            from src.association.gnn_utils import resolve_link_indices
+            true_links = resolve_link_indices(links, tips1, tips2)
             annot_t1_indices = sorted(list(set(l[0] for l in true_links)))
             annot_t2_indices = sorted(list(set(l[1] for l in true_links)))
+            
+            time_diff = get_time_diff_hours(img1_name, img2_name)
             
             # Positives
             for t1_idx, t2_idx in true_links:
                 if t1_idx < len(tips1) and t2_idx < len(tips2):
-                    self.samples.append((tips1[t1_idx], tips2[t2_idx], 1.0))
+                    self.samples.append((tips1[t1_idx], tips2[t2_idx], 1.0, time_diff))
             
             # Negatives: Only use indices that were actually annotated
             for t1_idx in annot_t1_indices:
@@ -72,13 +75,16 @@ class LinkingDataset(Dataset):
                     num_negs = min(3, len(potential_negs))
                     negs = np.random.choice(potential_negs, num_negs, replace=False)
                     for t2_idx in negs:
-                        self.samples.append((tips1[t1_idx], tips2[t2_idx], 0.0))
+                        self.samples.append((tips1[t1_idx], tips2[t2_idx], 0.0, time_diff))
 
     def __len__(self):
         return len(self.samples)
 
     def __getitem__(self, idx):
-        tip1, tip2, label = self.samples[idx]
+        tip1, tip2, label, time_diff = self.samples[idx]
+        
+        # Avoid division by zero, use 1.0 hour as fallback
+        t_delta = max(0.01, time_diff) 
         
         f1 = np.array(tip1['features'])
         f2 = np.array(tip2['features'])
@@ -87,6 +93,7 @@ class LinkingDataset(Dataset):
         dy = tip2['y'] - tip1['y']
         dist = np.sqrt(dx**2 + dy**2)
         
-        spatial = np.array([dx/100.0, dy/100.0, dist/100.0])
+        # Normalize by time_diff (velocity)
+        spatial = np.array([dx/t_delta/100.0, dy/t_delta/100.0, dist/t_delta/100.0])
         x = np.concatenate([f1, f2, spatial], axis=0)
         return torch.from_numpy(x).float(), torch.tensor([label]).float()
