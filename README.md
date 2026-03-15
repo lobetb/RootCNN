@@ -36,7 +36,7 @@ Main dependencies include:
 
 Launch the main interface by running:
 ```bash
-python gui.py
+python RootCNN/gui.py
 ```
 
 ### The Workflow
@@ -46,7 +46,7 @@ The GUI is organized into five sequential tabs:
 0. **Annotation Tools**: Launch manual annotation tools to label ground truth tips and links.
 1. **Train Detector**: Train the UNet model to identify root tips based on annotated ground truth.
 2. **Detect Tips**: Use a trained detector to predict tips and optionally extract deep features from your image series. Features are necessary for the subsequent tracking step.
-3. **Train Linker**: Train the GNN (Graph Neural Network) to learn the association between tips in consecutive frames using deep features and spatial relative coordinates.
+3. **Train Linker**: Train the neural network (MLP or GNN) to learn the association between tips in consecutive frames using deep features and spatial relative coordinates.
 4. **Track Tips**: Perform the final association and tracking across the series. This step automatically handles multiple plant sequences and filters out images containing artifacts.
 
 ## Project Structure
@@ -54,13 +54,15 @@ The GUI is organized into five sequential tabs:
 - `gui.py`: Main entry point for the graphical interface.
 - `src/`: Core source code.
   - `detection/`: UNet models and tip detection logic.
-  - `association/`: GNN models and tip tracking logic.
+  - `association/`: MLP/GNN models and tip tracking logic.
   - `utils/`: Shared utilities (path handling, device management, outlier filtering).
 - `models/`: Default directory for trained model checkpoints (`.pth`).
 - `output/`: Default directory for exported features and tracking results (`.json`). Created when running the program.
-- `tools/`: Annotation tools.
-  - `tips_annotator.py`: Manually annotate tips in images.
-  - `link_annotator.py`: Manually annotate the links between tips in image pairs (requires tips annotation first).
+- `tools/`: Workflow support tools.
+  - `tips_annotator.py`: Manually annotate tips in images for Step 1.
+  - `link_annotator.py`: Manually annotate links between tips for Step 3.
+  - `generate_heatmap.py`: Visualize tip detection confidence maps.
+  - `generate_presentation.py`: Generate the pipeline overview presentation.
 
 ## Performance & Benchmarking
 

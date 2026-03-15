@@ -18,6 +18,8 @@ from src.detection.models import UNet, FeatureExtractor, RootTipDataset
 from src.utils.common import get_device, discover_images, get_timestamp
 from src.utils.logging import PerformanceLogger, calculate_pixel_accuracy
 
+
+
 def detect_peaks(heatmap, threshold=0.5, min_distance=10):
     heatmap = heatmap.squeeze()
     coords = peak_local_max(heatmap, min_distance=min_distance, threshold_abs=threshold)
@@ -65,6 +67,7 @@ def find_support_boundary(image, threshold=40, min_thickness=20):
     
     if thickest_band[2] >= min_thickness:
         return thickest_band[1] # Return the bottom Y
+        
             
     return 0
 
@@ -113,6 +116,8 @@ def get_tip_coords_pred(image, model, patch_size=512, stride=256, threshold=0.5,
     tips = [[int(x), int(y), float(pred_heatmap[y, x])] for x, y in coords]
     return tips
 
+
+
 def extract_features_from_patches(patches, extractor, device, batch_size=16):
     if not patches:
         return np.array([])
@@ -147,6 +152,8 @@ def export_features_for_folder(
     extract_features=True,
     layer="enc3",
     threshold=0.5,
+    margin_left=0,
+    margin_right=0,
     log_file=None,
     stop_event=None):
     
@@ -213,7 +220,16 @@ def export_features_for_folder(
                 coords = [[x, y] for x, y in coords]
             else:
                 y_boundary = find_support_boundary(image)
-                coords = get_tip_coords_pred(image, base_model, threshold=float(threshold), y_min=y_boundary)
+                y_start = min(y_boundary + 100, image_h)
+                coords = get_tip_coords_pred(image, base_model, threshold=float(threshold), y_min=y_start)
+                
+                if (margin_left > 0 or margin_right > 0) and coords:
+                    filtered = []
+                    for c in coords:
+                        x = c[0]
+                        if x >= margin_left and x < (image_w - margin_right):
+                            filtered.append(c)
+                    coords = filtered
             
             if not coords:
                 # Log even if no tips detected

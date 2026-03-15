@@ -12,6 +12,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from src.detection.core import train_detection, export_features_for_folder
 from src.association.core import train_linker, associate_tips_multi_plant
+from src.length_measurement.compute_speed import compute_incremental_speeds
 
 
 class ThreadSafeConsole:
@@ -90,6 +91,7 @@ class RootCNN_V2_GUI:
         self.create_detect_tips_tab()
         self.create_linker_train_tab()
         self.create_association_tab()
+        self.create_growth_speed_tab()
 
         # Console Output
         self.console_frame = ttk.LabelFrame(root, text="Console Output")
@@ -302,6 +304,20 @@ class RootCNN_V2_GUI:
         ttk.Button(frame, text="Browse", command=lambda: self.browse_file(self.exp_log_entry, save=True)).grid(row=row, column=2, padx=5, pady=5)
 
         row += 1
+        ttk.Label(frame, text="Left Margin Exclusion (px):").grid(row=row, column=0, sticky='w', padx=5, pady=5)
+        self.exp_margin_left_entry = ttk.Entry(frame, width=10)
+        self.exp_margin_left_entry.insert(0, "0")
+        self.exp_margin_left_entry.grid(row=row, column=1, sticky='w', padx=5, pady=5)
+        self.add_info_icon(frame, row, 3, "Pixels from the left edge to ignore when detecting tips.")
+
+        row += 1
+        ttk.Label(frame, text="Right Margin Exclusion (px):").grid(row=row, column=0, sticky='w', padx=5, pady=5)
+        self.exp_margin_right_entry = ttk.Entry(frame, width=10)
+        self.exp_margin_right_entry.insert(0, "0")
+        self.exp_margin_right_entry.grid(row=row, column=1, sticky='w', padx=5, pady=5)
+        self.add_info_icon(frame, row, 3, "Pixels from the right edge to ignore when detecting tips.")
+
+        row += 1
         self.exp_start_btn = ttk.Button(frame, text="Run Detection & Feature Extraction", command=self.run_feature_export)
         self.exp_start_btn.grid(row=row, column=0, pady=20)
         self.exp_stop_btn = ttk.Button(frame, text="Stop Execution", command=self.stop_execution, state=tk.DISABLED)
@@ -316,12 +332,14 @@ class RootCNN_V2_GUI:
         thresh = float(self.exp_thresh_entry.get())
         ann = self.exp_ann_entry.get()
         log_file = self.exp_log_entry.get().strip() or None
+        margin_left = int(self.exp_margin_left_entry.get())
+        margin_right = int(self.exp_margin_right_entry.get())
 
         if not img_folder or not model_ckpt:
             messagebox.showwarning("Input Required", "Please provide image folder and model.")
             return
 
-        self.run_wrapper(self.exp_start_btn, self.exp_stop_btn, export_features_for_folder, img_folder, model_ckpt, out_json, annotations_json=ann, use_gt=use_gt, extract_features=extract_feat, threshold=thresh, log_file=log_file)
+        self.run_wrapper(self.exp_start_btn, self.exp_stop_btn, export_features_for_folder, img_folder, model_ckpt, out_json, annotations_json=ann, use_gt=use_gt, extract_features=extract_feat, threshold=thresh, margin_left=margin_left, margin_right=margin_right, log_file=log_file)
 
     # --- TAB: Linker Training ---
     def create_linker_train_tab(self):
@@ -452,6 +470,64 @@ class RootCNN_V2_GUI:
             return
 
         self.run_wrapper(self.assoc_start_btn, self.assoc_stop_btn, associate_tips_multi_plant, feat_json, model_path, out_json, output_links_json=out_links_json, spatial_threshold=spatial, prob_threshold=prob, log_file=log_file)
+
+    # --- TAB: Growth Speed ---
+    def create_growth_speed_tab(self):
+        frame = ttk.Frame(self.notebook)
+        self.notebook.add(frame, text="5. Growth Speed")
+
+        row = 0
+        ttk.Label(frame, text="Tracks JSON:").grid(row=row, column=0, sticky='w', padx=5, pady=5)
+        self.speed_tracks_entry = ttk.Entry(frame, width=50)
+        self.speed_tracks_entry.insert(0, "output/tracks.json")
+        self.speed_tracks_entry.grid(row=row, column=1, padx=5, pady=5)
+        ttk.Button(frame, text="Browse", command=lambda: self.browse_file(self.speed_tracks_entry)).grid(row=row, column=2, padx=5, pady=5)
+        self.add_info_icon(frame, row, 3, "Output from Step 4 (Track Tips). Contains tip positions over time.")
+
+        row += 1
+        ttk.Label(frame, text="Images Folder:").grid(row=row, column=0, sticky='w', padx=5, pady=5)
+        self.speed_img_entry = ttk.Entry(frame, width=50)
+        self.speed_img_entry.grid(row=row, column=1, padx=5, pady=5)
+        ttk.Button(frame, text="Browse", command=lambda: self.browse_dir(self.speed_img_entry)).grid(row=row, column=2, padx=5, pady=5)
+        self.add_info_icon(frame, row, 3, "Same images folder used for detection. Needed to compute geodesic root lengths.")
+
+        row += 1
+        ttk.Label(frame, text="Output CSV:").grid(row=row, column=0, sticky='w', padx=5, pady=5)
+        self.speed_csv_entry = ttk.Entry(frame, width=50)
+        self.speed_csv_entry.insert(0, "output/growth_speeds.csv")
+        self.speed_csv_entry.grid(row=row, column=1, padx=5, pady=5)
+        ttk.Button(frame, text="Browse", command=lambda: self.browse_file(self.speed_csv_entry, save=True)).grid(row=row, column=2, padx=5, pady=5)
+
+        row += 1
+        ttk.Label(frame, text="Downscale Factor:").grid(row=row, column=0, sticky='w', padx=5, pady=5)
+        self.speed_downscale_entry = ttk.Entry(frame, width=10)
+        self.speed_downscale_entry.insert(0, "0.25")
+        self.speed_downscale_entry.grid(row=row, column=1, sticky='w', padx=5, pady=5)
+        self.add_info_icon(frame, row, 3, "Downscale image crops before computing geodesic paths. Lower = faster but less precise.")
+
+        row += 1
+        self.speed_frangi_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(frame, text="Use Frangi vesselness filter", variable=self.speed_frangi_var).grid(row=row, column=0, columnspan=2, sticky='w', padx=5)
+        self.add_info_icon(frame, row, 3, "Frangi filter enhances root structures for better path accuracy. Uncheck for faster but less precise results.")
+
+        row += 1
+        self.speed_start_btn = ttk.Button(frame, text="Compute Growth Speeds", command=self.run_growth_speed)
+        self.speed_start_btn.grid(row=row, column=0, pady=20)
+        self.speed_stop_btn = ttk.Button(frame, text="Stop Execution", command=self.stop_execution, state=tk.DISABLED)
+        self.speed_stop_btn.grid(row=row, column=1, pady=20)
+
+    def run_growth_speed(self):
+        tracks_file = self.speed_tracks_entry.get()
+        img_folder = self.speed_img_entry.get()
+        output_csv = self.speed_csv_entry.get()
+        downscale = float(self.speed_downscale_entry.get())
+        use_frangi = self.speed_frangi_var.get()
+
+        if not tracks_file or not img_folder:
+            messagebox.showwarning("Input Required", "Please provide tracks JSON and images folder.")
+            return
+
+        self.run_wrapper(self.speed_start_btn, self.speed_stop_btn, compute_incremental_speeds, tracks_file, img_folder, output_csv, downscale=downscale, use_frangi=use_frangi)
 
 if __name__ == "__main__":
     root = tk.Tk()
