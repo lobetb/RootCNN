@@ -1,161 +1,20 @@
-
 import json
 import numpy as np
 import cv2
 import argparse
+import os
+import sys
 from pathlib import Path
 from tqdm import tqdm
-from skimage.filters import frangi
-from skimage.graph import MCP_Geometric
 from PIL import Image
 
-def load_tracks(tracks_path):
-    with open(tracks_path, 'r') as f:
-        data = json.load(f)
-    print(f"Loaded {len(data)} frames from {tracks_path}")
-    return data
+# Add the project root to the python path so we can import src
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-def get_root_bases(tracks_data):
-    """
-    Identify the starting position (Base) for each root ID.
-    The base is defined as the (x, y) position of the tip in the first frame it appears.
-    Returns: dict {root_id: (x, y)}
-    """
-    bases = {}
-    # Process frames in chronological order to find the first appearance
-    # tracks_data is assumed to be a list of frames, which might not be sorted by time
-    # provided it's the output of association.py, let's assume it is or sort it by filename/timestamp if needed.
-    # But usually tracks.json is sorted.
-    
-    for frame in tracks_data:
-        frame_tips = frame.get('tips', [])
-        for tip in frame_tips:
-            rid = tip['id']
-            if rid not in bases:
-                bases[rid] = (int(tip['x']), int(tip['y']))
-    
-    print(f"Identified {len(bases)} unique root IDs.")
-    return bases
+import src.length_measurement.measure_utils as utils
 
-
-def compute_cost_map(image_arr, prev_paths=None, active_ids=None, sigmas=range(1, 4), alpha=0.01, use_frangi=True):
-    """
-    Compute the cost map for pathfinding.
-    Combined cost = (1 - Vesselness) + alpha * (Distance to previous paths)
-    """
-    if use_frangi:
-        # 1. Vesselness Cost
-        # Frangi returns [0, 1] response
-        vesselness = frangi(image_arr, sigmas=sigmas, black_ridges=True)
-        vesselness = (vesselness - vesselness.min()) / (vesselness.max() - vesselness.min() + 1e-6)
-        
-        # Base cost: Background=1, Root=0
-        base_cost = 1.0 - vesselness + 1e-4
-    else:
-        # Fast mode: Use raw inverted intensity
-        if image_arr.max() > 1.0:
-            norm_img = image_arr / 255.0
-        else:
-            norm_img = image_arr
-            
-        base_cost = norm_img + 1e-4
-        vesselness = 1.0 - norm_img # Pseudo-vesselness for viz
-
-    # 2. Temporal Cost (if applicable)
-    if prev_paths and active_ids:
-        H, W = image_arr.shape
-        # Create a mask of all relevant previous paths
-        mask = np.zeros((H, W), dtype=np.uint8)
-        has_history = False
-        
-        for rid in active_ids:
-            if rid in prev_paths:
-                pts = np.array(prev_paths[rid], dtype=np.int32).reshape((-1, 1, 2))
-                # Draw lines for the previous path
-                cv2.polylines(mask, [pts], False, 255, 1) # 1px thickness is enough for distance transform
-                has_history = True
-        
-        if has_history:
-            # Distance transform: distance to nearest non-zero pixel
-            # We want distance to the WHITE lines (255).
-            # cv2.distanceTransform calculates distance to nearest ZERO pixel.
-            # So we invert the mask: 0 (lines) -> 0 distance.
-            inv_mask = 255 - mask
-            dist_map = cv2.distanceTransform(inv_mask, cv2.DIST_L2, 5)
-            
-            # Normalize dist map or just use raw pixels?
-            # Raw pixels is fine: being 10 pixels away adds 10*alpha to cost.
-            # If alpha=0.01, 10 pixels = 0.1 cost penalty.
-            # Vesselness difference is usually 0.5-0.8.
-            # So 50-80 pixels away is enough to outweigh being on a root?
-            # Maybe alpha should be higher, like 0.1?
-            # Let's use user definable alpha.
-            
-            total_cost = base_cost + (dist_map * alpha)
-            return total_cost, vesselness
-            
-    return base_cost, vesselness
-
-def compute_geodesic_length(cost_map, start, end):
-    """
-    Compute the shortest path length from start to end on the cost map.
-    start: (x, y)
-    end: (x, y)
-    """
-    # MCP expects coordinates as (row, col) i.e. (y, x)
-    start_node = (start[1], start[0])
-    end_node = (end[1], end[0])
-    
-    # Check bounds
-    H, W = cost_map.shape
-    if not (0 <= start_node[0] < H and 0 <= start_node[1] < W):
-        return None, []
-    if not (0 <= end_node[0] < H and 0 <= end_node[1] < W):
-        return None, []
-
-    mcp = MCP_Geometric(cost_map)
-    cumulative_costs, traceback_map = mcp.find_costs(starts=[start_node], ends=[end_node])
-    
-    # traceback returns a list of (row, col) tuples
-    try:
-        path = mcp.traceback(end_node)
-    except ValueError:
-        # Path not found
-        return None, []
-        
-    # Compute Euclidean arc length of the path
-    # path is [(y1, x1), (y2, x2), ...]
-    path_arr = np.array(path)
-    if len(path_arr) < 2:
-        return 0.0, path
-        
-    diffs = path_arr[:-1] - path_arr[1:]
-    dists = np.sqrt((diffs**2).sum(axis=1))
-    total_length = dists.sum()
-    
-    # Convert path back to (x, y) for visualization/output
-    path_xy = [(int(p[1]), int(p[0])) for p in path]
-    
-    return total_length, path_xy
-
-def get_root_bases(tracks_data):
-    """
-    Identify the starting position (Base) for each root ID.
-    But more importantly, track the EVOLUTION of the base.
-    Actually, usually the base stays put.
-    But for robustness, we can update the base if the root grows?
-    No, base is base.
-    Returns: dict {root_id: (x, y)}
-    """
-    bases = {}
-    for frame in tracks_data:
-        frame_tips = frame.get('tips', [])
-        for tip in frame_tips:
-            rid = tip['id']
-            if rid not in bases:
-                bases[rid] = (int(tip['x']), int(tip['y']))
-    print(f"Identified {len(bases)} unique root IDs.")
-    return bases
+# Removed redundant functions: parse_timestamp, compute_cost_map, compute_geodesic_length
+# These are now in measure_utils.py
 
 def process_series(tracks_file, img_folder, output_file, sigmas=range(1, 4), alpha=0.05, save_debug=False, downscale=0.25, use_frangi=True):
     tracks_data = load_tracks(tracks_file)
@@ -243,7 +102,7 @@ def process_series(tracks_file, img_folder, output_file, sigmas=range(1, 4), alp
             prev_paths_local[rid] = local_path
             
         # Compute Cost Map on smaller image
-        cost_map, v_map = compute_cost_map(crop_resized, prev_paths_local, frame_ids, sigmas=sigmas, alpha=alpha, use_frangi=use_frangi)
+        cost_map, v_map = utils.compute_cost_map(crop_resized, prev_paths_local, frame_ids, sigmas=sigmas, alpha=alpha, use_frangi=use_frangi)
         
         frame_results = {
             "image": str(basename),
@@ -278,7 +137,7 @@ def process_series(tracks_file, img_folder, output_file, sigmas=range(1, 4), alp
             l_base_y = (g_base_y - y1) * downscale
             
             # Compute path
-            length_local, path_local = compute_geodesic_length(cost_map, (l_base_x, l_base_y), (l_tip_x, l_tip_y))
+            length_local, path_local = utils.compute_geodesic_length(cost_map, (l_base_x, l_base_y), (l_tip_x, l_tip_y))
             
             if length_local is not None:
                 # Convert length back to global scale

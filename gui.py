@@ -508,7 +508,19 @@ class RootCNN_V2_GUI:
         row += 1
         self.speed_frangi_var = tk.BooleanVar(value=True)
         ttk.Checkbutton(frame, text="Use Frangi vesselness filter", variable=self.speed_frangi_var).grid(row=row, column=0, columnspan=2, sticky='w', padx=5)
-        self.add_info_icon(frame, row, 3, "Frangi filter enhances root structures for better path accuracy. Uncheck for faster but less precise results.")
+        self.add_info_icon(frame, row, 3, "Frangi filter enhances root structures for better path accuracy. Uncheck for faster but less precise results (recommended with binary thresholding).")
+
+        row += 1
+        self.speed_binary_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(frame, text="Use Binary Thresholding", variable=self.speed_binary_var).grid(row=row, column=0, columnspan=2, sticky='w', padx=5)
+        self.add_info_icon(frame, row, 3, "Strict black and white conversion. Helps avoid jumping between roots.")
+
+        row += 1
+        ttk.Label(frame, text="Cost Exponent:").grid(row=row, column=0, sticky='w', padx=5, pady=5)
+        self.speed_exponent_entry = ttk.Entry(frame, width=10)
+        self.speed_exponent_entry.insert(0, "4.0")
+        self.speed_exponent_entry.grid(row=row, column=1, sticky='w', padx=5, pady=5)
+        self.add_info_icon(frame, row, 3, "Power function to penalize background pixels. Higher = more selective path.")
 
         row += 1
         self.speed_start_btn = ttk.Button(frame, text="Compute Growth Speeds", command=self.run_growth_speed)
@@ -522,12 +534,14 @@ class RootCNN_V2_GUI:
         output_csv = self.speed_csv_entry.get()
         downscale = float(self.speed_downscale_entry.get())
         use_frangi = self.speed_frangi_var.get()
+        use_binary = self.speed_binary_var.get()
+        exponent = float(self.speed_exponent_entry.get())
 
         if not tracks_file or not img_folder:
             messagebox.showwarning("Input Required", "Please provide tracks JSON and images folder.")
             return
 
-        self.run_wrapper(self.speed_start_btn, self.speed_stop_btn, compute_incremental_speeds, tracks_file, img_folder, output_csv, downscale=downscale, use_frangi=use_frangi)
+        self.run_wrapper(self.speed_start_btn, self.speed_stop_btn, compute_incremental_speeds, tracks_file, img_folder, output_csv, downscale=downscale, use_frangi=use_frangi, exponent=exponent, use_threshold=use_binary)
 
 if __name__ == "__main__":
     root = tk.Tk()
