@@ -152,6 +152,7 @@ def export_features_for_folder(
     extract_features=True,
     layer="enc3",
     threshold=0.5,
+    feature_patch_size=512,
     margin_left=0,
     margin_right=0,
     log_file=None,
@@ -174,7 +175,11 @@ def export_features_for_folder(
             ann = json.load(f)
     
     all_tips = []
-    patch_size = 512
+    if feature_patch_size not in (512, 384, 320, 256):
+        print(f"Warning: unsupported feature_patch_size={feature_patch_size}, falling back to 512")
+        feature_patch_size = 512
+
+    patch_size = int(feature_patch_size)
     half_patch = patch_size // 2
     
     # Initialize logger if log_file is provided

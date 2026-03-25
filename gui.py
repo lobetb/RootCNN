@@ -210,7 +210,7 @@ class RootCNN_V2_GUI:
         row += 1
         ttk.Label(frame, text="Batch Size:").grid(row=row, column=0, sticky='w', padx=5, pady=5)
         self.det_batch_entry = ttk.Entry(frame, width=10)
-        self.det_batch_entry.insert(0, "4")
+        self.det_batch_entry.insert(0, "8")
         self.det_batch_entry.grid(row=row, column=1, sticky='w', padx=5, pady=5)
         self.add_info_icon(frame, row, 3, "Number of images processed per step. Decrease if out of GPU memory.")
 
@@ -297,6 +297,13 @@ class RootCNN_V2_GUI:
         self.add_info_icon(frame, row, 3, "Confidence threshold for tip detection (0.0 to 1.0).")
 
         row += 1
+        ttk.Label(frame, text="Feature Patch Size:").grid(row=row, column=0, sticky='w', padx=5, pady=5)
+        self.exp_feature_patch_size = ttk.Combobox(frame, width=10, state="readonly", values=["512", "384", "320", "256"])
+        self.exp_feature_patch_size.set("256")
+        self.exp_feature_patch_size.grid(row=row, column=1, sticky='w', padx=5, pady=5)
+        self.add_info_icon(frame, row, 3, "Patch size used for deep feature extraction around each tip. Smaller is faster but may reduce feature specificity.")
+
+        row += 1
         ttk.Label(frame, text="Detection log file:").grid(row=row, column=0, sticky='w', padx=5, pady=5)
         self.exp_log_entry = ttk.Entry(frame, width=50)
         self.exp_log_entry.insert(0, "output/logs/detection.json")
@@ -330,6 +337,7 @@ class RootCNN_V2_GUI:
         use_gt = self.exp_use_gt_var.get()
         extract_feat = self.exp_extract_feat_var.get()
         thresh = float(self.exp_thresh_entry.get())
+        feature_patch_size = int(self.exp_feature_patch_size.get())
         ann = self.exp_ann_entry.get()
         log_file = self.exp_log_entry.get().strip() or None
         margin_left = int(self.exp_margin_left_entry.get())
@@ -339,7 +347,7 @@ class RootCNN_V2_GUI:
             messagebox.showwarning("Input Required", "Please provide image folder and model.")
             return
 
-        self.run_wrapper(self.exp_start_btn, self.exp_stop_btn, export_features_for_folder, img_folder, model_ckpt, out_json, annotations_json=ann, use_gt=use_gt, extract_features=extract_feat, threshold=thresh, margin_left=margin_left, margin_right=margin_right, log_file=log_file)
+        self.run_wrapper(self.exp_start_btn, self.exp_stop_btn, export_features_for_folder, img_folder, model_ckpt, out_json, annotations_json=ann, use_gt=use_gt, extract_features=extract_feat, threshold=thresh, feature_patch_size=feature_patch_size, margin_left=margin_left, margin_right=margin_right, log_file=log_file)
 
     # --- TAB: Linker Training ---
     def create_linker_train_tab(self):
@@ -506,7 +514,7 @@ class RootCNN_V2_GUI:
         self.add_info_icon(frame, row, 3, "Downscale image crops before computing geodesic paths. Lower = faster but less precise.")
 
         row += 1
-        self.speed_frangi_var = tk.BooleanVar(value=True)
+        self.speed_frangi_var = tk.BooleanVar(value=False)
         ttk.Checkbutton(frame, text="Use Frangi vesselness filter", variable=self.speed_frangi_var).grid(row=row, column=0, columnspan=2, sticky='w', padx=5)
         self.add_info_icon(frame, row, 3, "Frangi filter enhances root structures for better path accuracy. Uncheck for faster but less precise results (recommended with binary thresholding).")
 
@@ -523,6 +531,13 @@ class RootCNN_V2_GUI:
         self.add_info_icon(frame, row, 3, "Power function to penalize background pixels. Higher = more selective path.")
 
         row += 1
+        ttk.Label(frame, text="Parallel Workers:").grid(row=row, column=0, sticky='w', padx=5, pady=5)
+        self.speed_workers_entry = ttk.Entry(frame, width=10)
+        self.speed_workers_entry.insert(0, "0")
+        self.speed_workers_entry.grid(row=row, column=1, sticky='w', padx=5, pady=5)
+        self.add_info_icon(frame, row, 3, "Number of parallel processes for geodesic computation. 0 = auto, 1 = sequential.")
+
+        row += 1
         self.speed_start_btn = ttk.Button(frame, text="Compute Growth Speeds", command=self.run_growth_speed)
         self.speed_start_btn.grid(row=row, column=0, pady=20)
         self.speed_stop_btn = ttk.Button(frame, text="Stop Execution", command=self.stop_execution, state=tk.DISABLED)
@@ -536,12 +551,13 @@ class RootCNN_V2_GUI:
         use_frangi = self.speed_frangi_var.get()
         use_binary = self.speed_binary_var.get()
         exponent = float(self.speed_exponent_entry.get())
+        workers = int(self.speed_workers_entry.get())
 
         if not tracks_file or not img_folder:
             messagebox.showwarning("Input Required", "Please provide tracks JSON and images folder.")
             return
 
-        self.run_wrapper(self.speed_start_btn, self.speed_stop_btn, compute_incremental_speeds, tracks_file, img_folder, output_csv, downscale=downscale, use_frangi=use_frangi, exponent=exponent, use_threshold=use_binary)
+        self.run_wrapper(self.speed_start_btn, self.speed_stop_btn, compute_incremental_speeds, tracks_file, img_folder, output_csv, downscale=downscale, use_frangi=use_frangi, exponent=exponent, use_threshold=use_binary, workers=workers)
 
 if __name__ == "__main__":
     root = tk.Tk()
