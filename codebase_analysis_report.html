@@ -1,0 +1,924 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RootCNN Codebase Analysis Report</title>
+    <style>
+        :root {
+            --critical: #dc2626;
+            --high: #ea580c;
+            --medium: #ca8a04;
+            --low: #2563eb;
+            --bg: #f8fafc;
+            --card: #ffffff;
+            --border: #e2e8f0;
+            --text: #1e293b;
+            --text-muted: #64748b;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+            padding: 2rem;
+        }
+        .container { max-width: 1200px; margin: 0 auto; }
+        h1 { font-size: 2rem; margin-bottom: 0.5rem; }
+        .subtitle { color: var(--text-muted); margin-bottom: 2rem; font-size: 0.95rem; }
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+        .summary-card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 1.25rem;
+            text-align: center;
+        }
+        .summary-card .count {
+            font-size: 2rem;
+            font-weight: 700;
+        }
+        .summary-card .label {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        .summary-card.critical .count { color: var(--critical); }
+        .summary-card.high .count { color: var(--high); }
+        .summary-card.medium .count { color: var(--medium); }
+        .summary-card.low .count { color: var(--low); }
+        .section { margin-bottom: 2.5rem; }
+        .section-header {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin-bottom: 1rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 2px solid var(--border);
+        }
+        .section-header h2 { font-size: 1.3rem; }
+        .badge {
+            display: inline-block;
+            padding: 0.2rem 0.6rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            color: white;
+        }
+        .badge-critical { background: var(--critical); }
+        .badge-high { background: var(--high); }
+        .badge-medium { background: var(--medium); }
+        .badge-low { background: var(--low); }
+        .issue-card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 1.25rem;
+            margin-bottom: 1rem;
+            border-left: 4px solid var(--border);
+        }
+        .issue-card.critical { border-left-color: var(--critical); }
+        .issue-card.high { border-left-color: var(--high); }
+        .issue-card.medium { border-left-color: var(--medium); }
+        .issue-card.low { border-left-color: var(--low); }
+        .issue-header {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin-bottom: 0.5rem;
+            flex-wrap: wrap;
+        }
+        .issue-title { font-weight: 600; font-size: 1rem; }
+        .issue-meta {
+            display: flex;
+            gap: 1.5rem;
+            margin-bottom: 0.75rem;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+        }
+        .issue-meta code {
+            background: #f1f5f9;
+            padding: 0.1rem 0.4rem;
+            border-radius: 3px;
+            font-size: 0.8rem;
+        }
+        .issue-description { margin-bottom: 0.75rem; }
+        .issue-fix {
+            background: #f0fdf4;
+            border: 1px solid #bbf7d0;
+            border-radius: 6px;
+            padding: 0.75rem 1rem;
+            font-size: 0.9rem;
+        }
+        .issue-fix strong { color: #166534; }
+        .category-tag {
+            display: inline-block;
+            padding: 0.15rem 0.5rem;
+            border-radius: 3px;
+            font-size: 0.75rem;
+            background: #f1f5f9;
+            color: var(--text-muted);
+            font-weight: 500;
+        }
+        .toc { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 1.5rem; margin-bottom: 2rem; }
+        .toc h3 { margin-bottom: 0.75rem; }
+        .toc ul { list-style: none; padding-left: 0; }
+        .toc li { padding: 0.25rem 0; }
+        .toc a { color: var(--text); text-decoration: none; }
+        .toc a:hover { text-decoration: underline; }
+        @media (max-width: 768px) {
+            body { padding: 1rem; }
+            .summary-grid { grid-template-columns: repeat(2, 1fr); }
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>🔍 RootCNN Codebase Analysis Report</h1>
+    <p class="subtitle">Generated on July 3, 2026 &mdash; Comprehensive scan of all source files for bugs, performance issues, and code quality concerns.</p>
+
+    <!-- Summary -->
+    <div class="summary-grid">
+        <div class="summary-card critical">
+            <div class="count">2</div>
+            <div class="label">Critical</div>
+        </div>
+        <div class="summary-card high">
+            <div class="count">10</div>
+            <div class="label">High</div>
+        </div>
+        <div class="summary-card medium">
+            <div class="count">16</div>
+            <div class="label">Medium</div>
+        </div>
+        <div class="summary-card low">
+            <div class="count">11</div>
+            <div class="label">Low</div>
+        </div>
+        <div class="summary-card">
+            <div class="count">39</div>
+            <div class="label">Total Issues</div>
+        </div>
+    </div>
+
+    <!-- Table of Contents -->
+    <div class="toc">
+        <h3>Table of Contents</h3>
+        <ul>
+            <li><a href="#critical">🔴 Critical Issues (2)</a></li>
+            <li><a href="#high">🟠 High-Severity Issues (10)</a></li>
+            <li><a href="#medium">🟡 Medium-Severity Issues (16)</a></li>
+            <li><a href="#low">🔵 Low-Severity Issues (11)</a></li>
+        </ul>
+    </div>
+
+    <!-- CRITICAL ISSUES -->
+    <div class="section" id="critical">
+        <div class="section-header">
+            <h2>🔴 Critical Issues</h2>
+            <span class="badge badge-critical">2 Issues</span>
+        </div>
+
+        <div class="issue-card critical">
+            <div class="issue-header">
+                <span class="badge badge-critical">Critical</span>
+                <span class="issue-title">Duplicate <code>if __name__ == "__main__"</code> block causes dead code</span>
+                <span class="category-tag">Bug</span>
+            </div>
+            <div class="issue-meta">
+                <span>📁 <code>src/detection/noise.py</code></span>
+                <span>📍 Lines 324–345</span>
+            </div>
+            <div class="issue-description">
+                <p>The file contains two identical <code>if __name__ == "__main__":</code> blocks. The second block (lines 324–345) is an exact duplicate of the first (lines 302–322). This means the second block completely overrides the first. If they ever diverge, one will be silently ignored, leading to confusing behavior.</p>
+            </div>
+            <div class="issue-fix">
+                <strong>Fix:</strong> Remove the duplicate block (lines 324–345). Keep only the first <code>if __name__ == "__main__":</code> block.
+            </div>
+        </div>
+
+        <div class="issue-card critical">
+            <div class="issue-header">
+                <span class="badge badge-critical">Critical</span>
+                <span class="issue-title">Duplicate method definition in GPU measurement class</span>
+                <span class="category-tag">Bug</span>
+            </div>
+            <div class="issue-meta">
+                <span>📁 <code>src/length_measurement_GPU/measure_gpu.py</code></span>
+                <span>📍 Line 135</span>
+            </div>
+            <div class="issue-description">
+                <p>The <code>forward</code> method is defined twice within the same class. In Python, the second definition completely replaces the first. The first definition (line 127) is incomplete and contains only initialization code, while the second (line 135) has the full implementation. The first definition's code is unreachable dead code.</p>
+            </div>
+            <div class="issue-fix">
+                <strong>Fix:</strong> Remove the incomplete first <code>forward</code> method definition (lines 127–134) and keep only the complete second definition.
+            </div>
+        </div>
+    </div>
+
+    <!-- HIGH ISSUES -->
+    <div class="section" id="high">
+        <div class="section-header">
+            <h2>🟠 High-Severity Issues</h2>
+            <span class="badge badge-high">10 Issues</span>
+        </div>
+
+        <div class="issue-card high">
+            <div class="issue-header">
+                <span class="badge badge-high">High</span>
+                <span class="issue-title">Duplicate return statement — dead code</span>
+                <span class="category-tag">Bug</span>
+            </div>
+            <div class="issue-meta">
+                <span>📁 <code>src/length_measurement/measure_utils.py</code></span>
+                <span>📍 Line 211</span>
+            </div>
+            <div class="issue-description">
+                <p>Line 211 contains an identical <code>return total_length, path_xy</code> that is unreachable because line 210 already returns. This is likely a copy-paste error and indicates the code was not properly reviewed.</p>
+            </div>
+            <div class="issue-fix">
+                <strong>Fix:</strong> Delete line 211 (the duplicate return statement).
+            </div>
+        </div>
+
+        <div class="issue-card high">
+            <div class="issue-header">
+                <span class="badge badge-high">High</span>
+                <span class="issue-title">Bare <code>except:</code> clause swallows all exceptions</span>
+                <span class="category-tag">Error Handling</span>
+            </div>
+            <div class="issue-meta">
+                <span>📁 <code>src/detection/noise.py</code></span>
+                <span>📍 Line 236</span>
+            </div>
+            <div class="issue-description">
+                <p>Using a bare <code>except:</code> catches all exceptions including <code>SystemExit</code>, <code>KeyboardInterrupt</code>, and <code>GeneratorExit</code>. This can mask critical errors, prevent graceful shutdowns, and make debugging extremely difficult.</p>
+            </div>
+            <div class="issue-fix">
+                <strong>Fix:</strong> Replace with <code>except Exception as e:</code> and add logging: <code>logging.warning(f"Support detection failed: {e}")</code>
+            </div>
+        </div>
+
+        <div class="issue-card high">
+            <div class="issue-header">
+                <span class="badge badge-high">High</span>
+                <span class="issue-title">Bare <code>except:</code> returns dummy data silently</span>
+                <span class="category-tag">Error Handling</span>
+            </div>
+            <div class="issue-meta">
+                <span>📁 <code>src/length_measurement_GPU/measure_gpu.py</code></span>
+                <span>📍 Line 59</span>
+            </div>
+            <div class="issue-description">
+                <p>When image loading fails, a bare <code>except:</code> returns dummy zero tensors without any logging or indication of failure. This silently produces incorrect measurements without the user knowing the input was invalid.</p>
+            </div>
+            <div class="issue-fix">
+                <strong>Fix:</strong> Change to <code>except (IOError, OSError) as e:</code> and log the error. Consider raising the exception instead of returning dummy data.
+            </div>
+        </div>
+
+        <div class="issue-card high">
+            <div class="issue-header">
+                <span class="badge badge-high">High</span>
+                <span class="issue-title">Potential IndexError on empty tips list</span>
+                <span class="category-tag">Error Handling</span>
+            </div>
+            <div class="issue-meta">
+                <span>📁 <code>src/association/core.py</code></span>
+                <span>📍 Lines 24, 31</span>
+            </div>
+            <div class="issue-description">
+                <p>The code accesses <code>tips1[0]</code> and <code>tips2[0]</code> via <code>hasattr(tips1[0], '_feat_tensor')</code> without first checking that the lists are non-empty. While there's a guard at line 20 that returns early if <code>num1 == 0 or num2 == 0</code>, any logic change could bypass this guard and cause an IndexError.</p>
+            </div>
+            <div class="issue-fix">
+                <strong>Fix:</strong> Add explicit length checks: <code>if tips1 and hasattr(tips1[0], '_feat_tensor') ...</code> or rely on the early return but add a defensive comment.
+            </div>
+        </div>
+
+        <div class="issue-card high">
+            <div class="issue-header">
+                <span class="badge badge-high">High</span>
+                <span class="issue-title">Unsafe <code>torch.load()</code> without <code>weights_only=True</code></span>
+                <span class="category-tag">Security</span>
+            </div>
+            <div class="issue-meta">
+                <span>📁 <code>src/detection/core.py</code></span>
+                <span>📍 Line 165</span>
+            </div>
+            <div class="issue-description">
+                <p><code>torch.load(model_ckpt, map_location=device)</code> uses Python's <code>pickle</code> module, which can execute arbitrary code. Loading an untrusted model checkpoint can lead to remote code execution (RCE). PyTorch 2.6+ defaults to <code>weights_only=True</code> but older versions do not.</p>
+            </div>
+            <div class="issue-fix">
+                <strong>Fix:</strong> Use <code>torch.load(model_ckpt, map_location=device, weights_only=True)</code> for all model loading calls. If custom objects are needed, use <code>torch.serialization.add_safe_globals()</code>.
+            </div>
+        </div>
+
+        <div class="issue-card high">
+            <div class="issue-header">
+                <span class="badge badge-high">High</span>
+                <span class="issue-title">GradScaler used without None check</span>
+                <span class="category-tag">Bug</span>
+            </div>
+            <div class="issue-meta">
+                <span>📁 <code>src/detection/core.py</code></span>
+                <span>📍 Line 329+</span>
+            </div>
+            <div class="issue-description">
+                <p>The <code>scaler</code> is initialized as <code>None</code> when not on CUDA (line 329: <code>scaler = ... if device == 'cuda' else None</code>), but subsequent code may call <code>scaler.scale()</code> or <code>scaler.step()</code> without checking if <code>scaler is not None</code>. Running on CPU would trigger an <code>AttributeError: 'NoneType' object has no attribute 'scale'</code>.</p>
+            </div>
+            <div class="issue-fix">
+                <strong>Fix:</strong> Wrap all scaler operations in <code>if scaler is not None:</code> guards, or use a no-op scaler wrapper for CPU.
+            </div>
+        </div>
+
+        <div class="issue-card high">
+            <div class="issue-header">
+                <span class="badge badge-high">High</span>
+                <span class="issue-title">No version pinning in requirements.txt</span>
+                <span class="category-tag">Reproducibility</span>
+            </div>
+            <div class="issue-meta">
+                <span>📁 <code>requirements.txt</code></span>
+                <span>📍 All lines</span>
+            </div>
+            <div class="issue-description">
+                <p>All dependencies are listed without version constraints (e.g., just <code>torch</code> instead of <code>torch>=2.0.0,&lt;3.0.0</code>). This means <code>pip install -r requirements.txt</code> can produce completely different environments over time, leading to silent breakage when APIs change.</p>
+            </div>
+            <div class="issue-fix">
+                <strong>Fix:</strong> Pin at least major versions: <code>torch>=2.0,&lt;3.0</code>, <code>numpy>=1.24,&lt;2.0</code>, etc. Consider generating a <code>requirements.lock</code> file.
+            </div>
+        </div>
+
+        <div class="issue-card high">
+            <div class="issue-header">
+                <span class="badge badge-high">High</span>
+                <span class="issue-title">Invalid requirements.txt format — numbered lines</span>
+                <span class="category-tag">Bug</span>
+            </div>
+            <div class="issue-meta">
+                <span>📁 <code>requirements.txt</code></span>
+                <span>📍 All lines</span>
+            </div>
+            <div class="issue-description">
+                <p>The requirements.txt file uses numbered list format (e.g., <code>1. torch</code>, <code>2. torchvision</code>). This is not valid pip format and <code>pip install -r requirements.txt</code> will fail with parse errors. Dependencies cannot be installed from this file.</p>
+            </div>
+            <div class="issue-fix">
+                <strong>Fix:</strong> Remove the numbering prefix from each line. Each line should contain only the package name and optional version specifier (e.g., <code>torch</code> or <code>torch>=2.0</code>).
+            </div>
+        </div>
+
+        <div class="issue-card high">
+            <div class="issue-header">
+                <span class="badge badge-high">High</span>
+                <span class="issue-title">Resource leak — PIL Images opened without context managers</span>
+                <span class="category-tag">Resource Leak</span>
+            </div>
+            <div class="issue-meta">
+                <span>📁 <code>src/detection/core.py</code></span>
+                <span>📍 Line 191</span>
+            </div>
+            <div class="issue-description">
+                <p>Images are opened with <code>Image.open()</code> without using a context manager or explicit <code>.close()</code>. In batch processing hundreds of images, this can exhaust file descriptors causing <code>OSError: Too many open files</code>.</p>
+            </div>
+            <div class="issue-fix">
+                <strong>Fix:</strong> Use context managers: <code>with Image.open(img_path) as image:</code> or call <code>image.close()</code> after conversion to numpy array.
+            </div>
+        </div>
+
+        <div class="issue-card high">
+            <div class="issue-header">
+                <span class="badge badge-high">High</span>
+                <span class="issue-title">ThreadPoolExecutor futures not properly managed</span>
+                <span class="category-tag">Performance</span>
+            </div>
+            <div class="issue-meta">
+                <span>📁 <code>src/detection/core.py</code></span>
+                <span>📍 Lines 197–220</span>
+            </div>
+            <div class="issue-description">
+                <p>The async image prefetching pattern pre-fetches only the first 2 images and manages futures in a dict, but there's no explicit cancellation of outstanding futures on error, and the prefetch window is fixed at 2 regardless of processing speed. If an exception occurs mid-loop, futures may continue loading images wastefully.</p>
+            </div>
+            <div class="issue-fix">
+                <strong>Fix:</strong> Add proper exception handling around future results, cancel outstanding futures in a finally block, and consider using a bounded queue-based prefetch pattern.
+            </div>
+        </div>
+    </div>
+
+    <!-- MEDIUM ISSUES -->
+    <div class="section" id="medium">
+        <div class="section-header">
+            <h2>🟡 Medium-Severity Issues</h2>
+            <span class="badge badge-medium">16 Issues</span>
+        </div>
+
+        <div class="issue-card medium">
+            <div class="issue-header">
+                <span class="badge badge-medium">Medium</span>
+                <span class="issue-title">Resource leak in image dataset class</span>
+                <span class="category-tag">Resource Leak</span>
+            </div>
+            <div class="issue-meta">
+                <span>📁 <code>src/detection/models.py</code></span>
+                <span>📍 Line 39</span>
+            </div>
+            <div class="issue-description">
+                <p>PIL Image files are opened without context managers in the dataset <code>__getitem__</code> method. With a DataLoader using multiple workers and large datasets, this leads to thousands of leaked file handles.</p>
+            </div>
+            <div class="issue-fix">
+                <strong>Fix:</strong> Use <code>with Image.open(image_path) as img:</code> or call <code>img.close()</code> after converting to tensor.
+            </div>
+        </div>
+
+        <div class="issue-card medium">
+            <div class="issue-header">
+                <span class="badge badge-medium">Medium</span>
+                <span class="issue-title">No validation of annotation JSON structure</span>
+                <span class="category-tag">Error Handling</span>
+            </div>
+            <div class="issue-meta">
+                <span>📁 <code>src/detection/core.py</code></span>
+                <span>📍 Line 174</span>
+            </div>
+            <div class="issue-description">
+                <p>The annotation JSON is loaded and used without validating its structure. If the JSON is malformed or missing expected keys, the error will be a cryptic <code>KeyError</code> or <code>TypeError</code> deep in the processing loop.</p>
+            </div>
+            <div class="issue-fix">
+                <strong>Fix:</strong> Add schema validation after loading annotations, or wrap annotation access with helpful error messages.
+            </div>
+        </div>
+
+        <div class="issue-card medium">
+            <div class="issue-header">
+                <span class="badge badge-medium">Medium</span>
+                <span class="issue-title">Device check uses string comparison</span>
+                <span class="category-tag">Code Quality</span>
+            </div>
+            <div class="issue-meta">
+                <span>📁 <code>src/detection/core.py</code></span>
+                <span>📍 Lines 103, 137, 329</span>
+            </div>
+            <div class="issue-description">
+                <p>Device is compared as <code>device == 'cuda'</code> (string equality). If the device is a <code>torch.device</code> object or specified as <code>'cuda:0'</code>, these checks will fail silently, disabling mixed-precision training on GPU.</p>
+            </div>
+            <div class="issue-fix">
+                <strong>Fix:</strong> Use <code>torch.device(device).type == 'cuda'</code> or standardize device to always be a <code>torch.device</code> object.
+            </div>
+        </div>
+
+        <div class="issue-card medium">
+            <div class="issue-header">
+                <span class="badge badge-medium">Medium</span>
+                <span class="issue-title">Subprocess path validation insufficient</span>
+                <span class="category-tag">Security</span>
+            </div>
+            <div class="issue-meta">
+                <span>📁 <code>gui.py</code></span>
+                <span>📍 Line 182</span>
+            </div>
+            <div class="issue-description">
+                <p><code>subprocess.Popen([sys.executable, script_abs_path])</code> only checks file existence. It doesn't validate the path is within the project directory. A path traversal could execute arbitrary Python scripts if the path comes from user input fields.</p>
+            </div>
+            <div class="issue-fix">
+                <strong>Fix:</strong> Validate that the resolved path is within the application directory: <code>os.path.realpath(script_abs_path).startswith(app_dir)</code>.
+            </div>
+        </div>
+
+        <div class="issue-card medium">
+            <div class="issue-header">
+                <span class="badge badge-medium">Medium</span>
+                <span class="issue-title">sys.stdout/stderr replaced without restoration</span>
+                <span class="category-tag">Code Quality</span>
+            </div>
+            <div class="issue-meta">
+                <span>📁 <code>gui.py</code></span>
+                <span>📍 Lines 104–105</span>
+            </div>
+            <div class="issue-description">
+                <p>Standard output streams are redirected to a text widget but the original streams are never saved. If the GUI crashes or needs to restore console output, the original streams are lost permanently.</p>
+            </div>
+            <div class="issue-fix">
+                <strong>Fix:</strong> Save originals: <code>self._orig_stdout = sys.stdout</code> before replacement, and restore in a cleanup/destroy method.
+            </div>
+        </div>
+
+        <div class="issue-card medium">
+            <div class="issue-header">
+                <span class="badge badge-medium">Medium</span>
+                <span class="issue-title">Hardcoded Sigmoid layer removal assumption</span>
+                <span class="category-tag">Code Quality</span>
+            </div>
+            <div class="issue-meta">
+                <span>📁 <code>src/association/fine_tune_linker.py</code></span>
+                <span>📍 Line 135</span>
+            </div>
+            <div class="issue-description">
+                <p>Code removes the last layer of a model assuming it's a Sigmoid activation. If the model architecture changes, this will silently remove a different layer (e.g., a Linear layer), producing incorrect output without any error.</p>
+            </div>
+            <div class="issue-fix">
+                <strong>Fix:</strong> Add an assertion: <code>assert isinstance(model[-1], nn.Sigmoid), "Expected last layer to be Sigmoid"</code> before removal.
+            </div>
+        </div>
+
+        <div class="issue-card medium">
+            <div class="issue-header">
+                <span class="badge badge-medium">Medium</span>
+                <span class="issue-title">CPU count not bounded for worker pools</span>
+                <span class="category-tag">Performance</span>
+            </div>
+            <div class="issue-meta">
+                <span>📁 <code>src/length_measurement/compute_speed.py</code></span>
+                <span>📍 Line 281</span>
+            </div>
+            <div class="issue-description">
+                <p>Worker count is derived from <code>os.cpu_count()</code> without bounds. On high-core machines (64+ cores), this spawns excessive workers that compete for memory and I/O, actually degrading performance. On <code>None</code> returns, this will crash.</p>
+            </div>
+            <div class="issue-fix">
+                <strong>Fix:</strong> Bound the worker count: <code>workers = max(1, min(os.cpu_count() or 1, 16))</code>
+            </div>
+        </div>
+
+        <div class="issue-card medium">
+            <div class="issue-header">
+                <span class="badge badge-medium">Medium</span>
+                <span class="issue-title">Silent timestamp parsing failures</span>
+                <span class="category-tag">Error Handling</span>
+            </div>
+            <div class="issue-meta">
+                <span>📁 <code>src/length_measurement/compute_speed.py</code></span>
+                <span>📍 Line 241</span>
+            </div>
+            <div class="issue-description">
+                <p>When timestamp parsing returns <code>None</code>, the frame is silently skipped with <code>continue</code>. In a batch of images, this could silently skip many frames without any indication, producing incorrect speed measurements.</p>
+            </div>
+            <div class="issue-fix">
+                <strong>Fix:</strong> Add a counter for skipped frames and log a warning after processing: <code>if skipped > 0: logging.warning(f"Skipped {skipped} frames due to timestamp parse failure")</code>
+            </div>
+        </div>
+
+        <div class="issue-card medium">
+            <div class="issue-header">
+                <span class="badge badge-medium">Medium</span>
+                <span class="issue-title">Empty coordinate arrays not handled gracefully</span>
+                <span class="category-tag">Robustness</span>
+            </div>
+            <div class="issue-meta">
+                <span>📁 <code>src/association/gnn_utils.py</code></span>
+                <span>📍 Lines 26, 32</span>
+            </div>
+            <div class="issue-description">
+                <p>Functions create numpy arrays with shape <code>(0, 2)</code> for empty coordinate lists. While numpy handles this, downstream <code>torch.cdist()</code> and graph construction operations may produce unexpected results or NaN values with empty inputs.</p>
+            </div>
+            <div class="issue-fix">
+                <strong>Fix:</strong> Add early return for empty arrays with appropriate default values (empty edge_index, zero-filled cost matrix, etc.).
+            </div>
+        </div>
+
+        <div class="issue-card medium">
+            <div class="issue-header">
+                <span class="badge badge-medium">Medium</span>
+                <span class="issue-title">Direct list indexing without bounds check</span>
+                <span class="category-tag">Error Handling</span>
+            </div>
+            <div class="issue-meta">
+                <span>📁 <code>src/association/heuristic_linker.py</code></span>
+                <span>📍 Line 171</span>
+            </div>
+            <div class="issue-description">
+                <p>List elements are accessed by computed indices without validating that the index is within bounds. Edge cases (e.g., single-element lists, filtered results) could cause IndexError crashes.</p>
+            </div>
+            <div class="issue-fix">
+                <strong>Fix:</strong> Add bounds validation: <code>if idx &lt; len(candidates):</code> before accessing <code>candidates[idx]</code>.
+            </div>
+        </div>
+
+        <div class="issue-card medium">
+            <div class="issue-header">
+                <span class="badge badge-medium">Medium</span>
+                <span class="issue-title">Inefficient scale ratio calculation with list.index()</span>
+                <span class="category-tag">Performance</span>
+            </div>
+            <div class="issue-meta">
+                <span>📁 <code>src/length_measurement_GPU/measure_gpu.py</code></span>
+                <span>📍 Line 180</span>
+            </div>
+            <div class="issue-description">
+                <p>Using <code>list.index()</code> for scale lookups inside a loop results in O(n²) complexity for what should be an O(n) operation. As the number of scales grows, this becomes a bottleneck.</p>
+            </div>
+            <div class="issue-fix">
+                <strong>Fix:</strong> Pre-compute scale ratios in a dictionary or use <code>enumerate()</code> to avoid repeated linear scans.
+            </div>
+        </div>
+
+        <div class="issue-card medium">
+            <div class="issue-header">
+                <span class="badge badge-medium">Medium</span>
+                <span class="issue-title">Full pairwise distance matrix computed unnecessarily</span>
+                <span class="category-tag">Performance</span>
+            </div>
+            <div class="issue-meta">
+                <span>📁 <code>src/association/core.py</code></span>
+                <span>📍 Line 39</span>
+            </div>
+            <div class="issue-description">
+                <p><code>torch.cdist(coords1, coords2)</code> computes the full N×M distance matrix. When only nearby pairs matter (e.g., within a spatial threshold), this wastes memory and computation. For large tip counts, this is O(N*M) in both time and space.</p>
+            </div>
+            <div class="issue-fix">
+                <strong>Fix:</strong> Use a spatial index (KD-tree) or mask the distance matrix with a maximum distance threshold before further computation.
+            </div>
+        </div>
+
+        <div class="issue-card medium">
+            <div class="issue-header">
+                <span class="badge badge-medium">Medium</span>
+                <span class="issue-title">Pre-converting all features to tensors causes memory overhead</span>
+                <span class="category-tag">Performance</span>
+            </div>
+            <div class="issue-meta">
+                <span>📁 <code>src/association/core.py</code></span>
+                <span>📍 Lines 164–167</span>
+            </div>
+            <div class="issue-description">
+                <p>All feature vectors are eagerly converted to GPU tensors for all plants before processing. With many plants and large feature vectors, this can exhaust GPU memory before processing even begins.</p>
+            </div>
+            <div class="issue-fix">
+                <strong>Fix:</strong> Use lazy evaluation — convert features to tensors only when needed for the current comparison pair, or batch them per-plant.
+            </div>
+        </div>
+
+        <div class="issue-card medium">
+            <div class="issue-header">
+                <span class="badge badge-medium">Medium</span>
+                <span class="issue-title">torch.argsort() called on every frame</span>
+                <span class="category-tag">Performance</span>
+            </div>
+            <div class="issue-meta">
+                <span>📁 <code>src/length_measurement_GPU/measure_gpu.py</code></span>
+                <span>📍 Line 228</span>
+            </div>
+            <div class="issue-description">
+                <p>Sorting operations are performed on every frame even when the tip order doesn't change between consecutive frames. This adds unnecessary GPU synchronization overhead.</p>
+            </div>
+            <div class="issue-fix">
+                <strong>Fix:</strong> Cache the sorted order and only re-sort when new tips appear or existing tips are lost.
+            </div>
+        </div>
+
+        <div class="issue-card medium">
+            <div class="issue-header">
+                <span class="badge badge-medium">Medium</span>
+                <span class="issue-title">Resource leak in length measurement</span>
+                <span class="category-tag">Resource Leak</span>
+            </div>
+            <div class="issue-meta">
+                <span>📁 <code>src/length_measurement/measure.py</code></span>
+                <span>📍 Line 43</span>
+            </div>
+            <div class="issue-description">
+                <p>PIL Image opened without a context manager during batch measurement. When processing hundreds of images, unclosed file handles accumulate.</p>
+            </div>
+            <div class="issue-fix">
+                <strong>Fix:</strong> Use <code>with Image.open(path) as img:</code> or explicitly close after use.
+            </div>
+        </div>
+
+        <div class="issue-card medium">
+            <div class="issue-header">
+                <span class="badge badge-medium">Medium</span>
+                <span class="issue-title">Bare except block in association model</span>
+                <span class="category-tag">Error Handling</span>
+            </div>
+            <div class="issue-meta">
+                <span>📁 <code>src/association/models.py</code></span>
+                <span>📍 Line 59</span>
+            </div>
+            <div class="issue-description">
+                <p>A bare <code>except:</code> block catches all exceptions without logging, making it impossible to diagnose failures during model inference.</p>
+            </div>
+            <div class="issue-fix">
+                <strong>Fix:</strong> Catch specific exceptions (e.g., <code>RuntimeError</code>, <code>ValueError</code>) and log them with context.
+            </div>
+        </div>
+    </div>
+
+    <!-- LOW ISSUES -->
+    <div class="section" id="low">
+        <div class="section-header">
+            <h2>🔵 Low-Severity Issues</h2>
+            <span class="badge badge-low">11 Issues</span>
+        </div>
+
+        <div class="issue-card low">
+            <div class="issue-header">
+                <span class="badge badge-low">Low</span>
+                <span class="issue-title">Magic numbers for pixel-to-cm conversion</span>
+                <span class="category-tag">Code Quality</span>
+            </div>
+            <div class="issue-meta">
+                <span>📁 <code>src/length_measurement/measure.py</code></span>
+                <span>📍 Lines 20–21</span>
+            </div>
+            <div class="issue-description">
+                <p>Hardcoded <code>PX_PER_CM</code> and <code>PX_PER_MM</code> values are defined inline. These are calibration values that vary by imaging setup and should be configurable.</p>
+            </div>
+            <div class="issue-fix">
+                <strong>Fix:</strong> Move to a configuration file or accept as constructor/function parameters with the current values as defaults.
+            </div>
+        </div>
+
+        <div class="issue-card low">
+            <div class="issue-header">
+                <span class="badge badge-low">Low</span>
+                <span class="issue-title">float('nan') used as sentinel score value</span>
+                <span class="category-tag">Code Quality</span>
+            </div>
+            <div class="issue-meta">
+                <span>📁 <code>src/detection/core.py</code></span>
+                <span>📍 Line 282</span>
+            </div>
+            <div class="issue-description">
+                <p>Using <code>float('nan')</code> as a score when coordinates lack a score component. NaN propagates through arithmetic silently and <code>NaN != NaN</code> can cause subtle comparison bugs downstream.</p>
+            </div>
+            <div class="issue-fix">
+                <strong>Fix:</strong> Use <code>None</code> consistently (as done in the <code>use_gt</code> case) or use <code>0.0</code> with a flag indicating the score is unavailable.
+            </div>
+        </div>
+
+        <div class="issue-card low">
+            <div class="issue-header">
+                <span class="badge badge-low">Low</span>
+                <span class="issue-title">Timestamp fallback masks data quality issues</span>
+                <span class="category-tag">Code Quality</span>
+            </div>
+            <div class="issue-meta">
+                <span>📁 <code>src/utils/common.py</code></span>
+                <span>📍 Line 31</span>
+            </div>
+            <div class="issue-description">
+                <p>When timestamp parsing fails, the code falls back to using the raw filename for sorting. This can produce incorrect temporal ordering without any warning to the user.</p>
+            </div>
+            <div class="issue-fix">
+                <strong>Fix:</strong> Log a warning when falling back to filename-based sorting so users can investigate data issues.
+            </div>
+        </div>
+
+        <div class="issue-card low">
+            <div class="issue-header">
+                <span class="badge badge-low">Low</span>
+                <span class="issue-title">Implicit float-to-int conversion</span>
+                <span class="category-tag">Code Quality</span>
+            </div>
+            <div class="issue-meta">
+                <span>📁 <code>src/detection/core.py</code></span>
+                <span>📍 Line 116</span>
+            </div>
+            <div class="issue-description">
+                <p>Float values are implicitly truncated to int without explicit conversion. This is ambiguous — it's unclear if truncation or rounding was intended.</p>
+            </div>
+            <div class="issue-fix">
+                <strong>Fix:</strong> Use explicit <code>int(round(value))</code> or <code>int(value)</code> to clarify intent.
+            </div>
+        </div>
+
+        <div class="issue-card low">
+            <div class="issue-header">
+                <span class="badge badge-low">Low</span>
+                <span class="issue-title">Unused variable assignments in fine-tuning</span>
+                <span class="category-tag">Code Quality</span>
+            </div>
+            <div class="issue-meta">
+                <span>📁 <code>src/association/fine_tune_linker.py</code></span>
+                <span>📍 Lines 163, 179</span>
+            </div>
+            <div class="issue-description">
+                <p>Intermediate variables are assigned but never used later in the function. These waste memory and reduce code readability.</p>
+            </div>
+            <div class="issue-fix">
+                <strong>Fix:</strong> Remove unused assignments or prefix with <code>_</code> to indicate intentional discard.
+            </div>
+        </div>
+
+        <div class="issue-card low">
+            <div class="issue-header">
+                <span class="badge badge-low">Low</span>
+                <span class="issue-title">bbox("insert") may return None</span>
+                <span class="category-tag">Bug</span>
+            </div>
+            <div class="issue-meta">
+                <span>📁 <code>gui.py</code></span>
+                <span>📍 Line 60</span>
+            </div>
+            <div class="issue-description">
+                <p>In certain Tkinter states, <code>text_widget.bbox("insert")</code> may return <code>None</code> instead of a tuple. Accessing elements of <code>None</code> would cause a <code>TypeError</code>.</p>
+            </div>
+            <div class="issue-fix">
+                <strong>Fix:</strong> Add a null check: <code>bbox = self.bbox("insert"); if bbox is None: return</code>
+            </div>
+        </div>
+
+        <div class="issue-card low">
+            <div class="issue-header">
+                <span class="badge badge-low">Low</span>
+                <span class="issue-title">Generic exception catching in dataset __getitem__</span>
+                <span class="category-tag">Error Handling</span>
+            </div>
+            <div class="issue-meta">
+                <span>📁 <code>tools/link_annotator.py</code></span>
+                <span>📍 Line 59</span>
+            </div>
+            <div class="issue-description">
+                <p>Catching all exceptions in <code>__getitem__</code> prevents PyTorch DataLoader from properly handling and reporting data loading errors.</p>
+            </div>
+            <div class="issue-fix">
+                <strong>Fix:</strong> Catch specific exceptions (<code>IOError</code>, <code>FileNotFoundError</code>) and let unexpected ones propagate.
+            </div>
+        </div>
+
+        <div class="issue-card low">
+            <div class="issue-header">
+                <span class="badge badge-low">Low</span>
+                <span class="issue-title">Exception caught but not used</span>
+                <span class="category-tag">Code Quality</span>
+            </div>
+            <div class="issue-meta">
+                <span>📁 <code>src/length_measurement/measure.py</code></span>
+                <span>📍 Line 105</span>
+            </div>
+            <div class="issue-description">
+                <p>Exception variable <code>e</code> is caught but never referenced in the except block. Either the exception info should be logged or the variable should be omitted.</p>
+            </div>
+            <div class="issue-fix">
+                <strong>Fix:</strong> Use <code>except SomeException:</code> (no <code>as e</code>) or log it: <code>logging.debug(f"Skipped: {e}")</code>
+            </div>
+        </div>
+
+        <div class="issue-card low">
+            <div class="issue-header">
+                <span class="badge badge-low">Low</span>
+                <span class="issue-title">max() called with single argument</span>
+                <span class="category-tag">Code Quality</span>
+            </div>
+            <div class="issue-meta">
+                <span>📁 <code>src/length_measurement/compute_speed.py</code></span>
+                <span>📍 Line 130</span>
+            </div>
+            <div class="issue-description">
+                <p><code>max()</code> is called with what appears to be a single-element iterable, which is a no-op. This suggests either a missing lower bound or an incomplete refactor.</p>
+            </div>
+            <div class="issue-fix">
+                <strong>Fix:</strong> Either simplify to just the expression, or add the intended lower bound: <code>max(0, value)</code>
+            </div>
+        </div>
+
+        <div class="issue-card low">
+            <div class="issue-header">
+                <span class="badge badge-low">Low</span>
+                <span class="issue-title">Redundant tensor device specification</span>
+                <span class="category-tag">Performance</span>
+            </div>
+            <div class="issue-meta">
+                <span>📁 <code>src/association/core.py</code></span>
+                <span>📍 Line 167</span>
+            </div>
+            <div class="issue-description">
+                <p>Device is specified redundantly when the source tensors are already on the correct device. The <code>torch.stack()</code> operation preserves device, making the explicit device specification unnecessary overhead.</p>
+            </div>
+            <div class="issue-fix">
+                <strong>Fix:</strong> Remove redundant <code>.to(device)</code> calls when stacking tensors already on the target device.
+            </div>
+        </div>
+
+        <div class="issue-card low">
+            <div class="issue-header">
+                <span class="badge badge-low">Low</span>
+                <span class="issue-title">Hardcoded batch size in collate_fn</span>
+                <span class="category-tag">Code Quality</span>
+            </div>
+            <div class="issue-meta">
+                <span>📁 <code>src/length_measurement_GPU/measure_gpu.py</code></span>
+                <span>📍 Line 205</span>
+            </div>
+            <div class="issue-description">
+                <p>The collate function has a hardcoded batch size of 1. This prevents batched GPU processing which could significantly improve throughput for the distance map computation.</p>
+            </div>
+            <div class="issue-fix">
+                <strong>Fix:</strong> Make batch size configurable and implement proper batched collation for variable-size inputs.
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <div style="margin-top: 3rem; padding-top: 1.5rem; border-top: 1px solid var(--border); color: var(--text-muted); font-size: 0.85rem; text-align: center;">
+        <p>Report generated by automated codebase analysis &mdash; RootCNN Repository &mdash; July 3, 2026</p>
+        <p style="margin-top: 0.5rem;">Files scanned: 23 | Total issues: 39 | Critical: 2 | High: 10 | Medium: 16 | Low: 11</p>
+    </div>
+</div>
+</body>
+</html>
